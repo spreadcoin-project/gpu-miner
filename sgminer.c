@@ -12,6 +12,8 @@
 
 #include "config.h"
 
+#define HAVE_LIBCURL
+
 #ifdef HAVE_CURSES
 #include <curses.h>
 #endif
@@ -450,7 +452,7 @@ static void sharelog(const char*disposition, const struct work*work)
 	t = (unsigned long int)(work->tv_work_found.tv_sec);
 	target = bin2hex(work->target, sizeof(work->target));
 	hash = bin2hex(work->hash, sizeof(work->hash));
-	data = bin2hex(work->data, sizeof(work->data));
+	data = bin2hex(work->whole_block, 185);
 
 	// timestamp,disposition,target,pool,dev,thr,sharehash,sharedata
 	rv = snprintf(s, sizeof(s), "%lu,%s,%s,%s,%s%u,%u,%s,%s\n", t, disposition, target, pool->rpc_url, cgpu->drv->name, cgpu->device_id, thr_id, hash, data);
@@ -1087,7 +1089,7 @@ char *set_difficulty_multiplier(char *arg)
 	if (!(arg && arg[0]))
 		return "Invalid parameters for set difficulty multiplier";
 	opt_diff_mult = strtod(arg, endptr);
-	if (opt_diff_mult == 0 || endptr == arg)
+	if (opt_diff_mult == 0 || *endptr == arg)
 		return "Invalid value passed to set difficulty multiplier";
 
 	return NULL;
@@ -1396,7 +1398,7 @@ static struct opt_table opt_config_table[] = {
 	OPT_WITH_ARG("--pools",
 			opt_set_bool, NULL, NULL, opt_hidden),
 	OPT_WITH_ARG("--difficulty-multiplier",
-			set_difficulty_multiplier, NULL, NULL, 
+			set_difficulty_multiplier, NULL, NULL,
 			"Difficulty multiplier for jobs received from stratum pools"),
 	OPT_ENDTABLE
 };
@@ -1607,20 +1609,27 @@ static bool jobj_binary(const json_t *obj, const char *key,
 
 	return true;
 }
-#endif
 
-static void calc_midstate(struct work *work)
+static int jobj_binary_partial(const json_t *obj, const char *key,
+			void *buf, size_t maxsize, bool required)
 {
-	unsigned char data[64];
-	uint32_t *data32 = (uint32_t *)data;
-	sha256_ctx ctx;
+	const char *hexstr;
+	json_t *tmp;
 
-	flip64(data32, work->data);
-	sha256_init(&ctx);
-	sha256_update(&ctx, data, 64);
-	memcpy(work->midstate, ctx.h, 32);
-	endian_flip32(work->midstate, work->midstate);
+	tmp = json_object_get(obj, key);
+	if (unlikely(!tmp)) {
+		if (unlikely(required))
+			applog(LOG_ERR, "JSON key '%s' not found", key);
+		return false;
+	}
+	hexstr = json_string_value(tmp);
+	if (unlikely(!hexstr)) {
+		applog(LOG_ERR, "JSON key '%s' is not a string", key);
+		return false;
+	}
+	return hex2bin_partial(buf, hexstr, maxsize);
 }
+#endif
 
 static struct work *make_work(void)
 {
@@ -1780,9 +1789,10 @@ static void update_gbt(struct pool *pool)
 /* Return the work coin/network difficulty */
 static double get_work_coindiff(const struct work *work)
 {
-	uint8_t pow = work->data[72];
+    uint32_t nBits = le32toh(work->header.nBits);
+	uint8_t pow = nBits >> 24;
 	int powdiff = (8 * (0x1d - 3)) - (8 * (pow - 3));
-	uint32_t diff32 = be32toh(*((uint32_t *)(work->data + 72))) & 0x00FFFFFF;
+	uint32_t diff32 = nBits & 0x00FFFFFF;
 	double numerator = 0xFFFFULL << powdiff;
 	return numerator / (double)diff32;
 }
@@ -1804,10 +1814,10 @@ static void gen_gbt_work(struct pool *pool, struct work *work)
 	cg_dwlock(&pool->gbt_lock);
 	merkleroot = __gbt_merkleroot(pool);
 
-	memcpy(work->data, &pool->gbt_version, 4);
-	memcpy(work->data + 4, pool->previousblockhash, 32);
-	memcpy(work->data + 4 + 32 + 32, &pool->curtime, 4);
-	memcpy(work->data + 4 + 32 + 32 + 4, &pool->gbt_bits, 4);
+	memcpy(&work->header.nVersion, &pool->gbt_version, 4);
+	memcpy(&work->header.hashPrevBlock, pool->previousblockhash, 32);
+	memcpy(&work->header.nTime, &pool->curtime, 4);
+	memcpy(&work->header.nBits, &pool->gbt_bits, 4);
 
 	memcpy(work->target, pool->gbt_target, 32);
 
@@ -1820,14 +1830,12 @@ static void gen_gbt_work(struct pool *pool, struct work *work)
 		work->job_id = strdup(pool->gbt_workid);
 	cg_runlock(&pool->gbt_lock);
 
-	flip32(work->data + 4 + 32, merkleroot);
+	memcpy(&work->header.hashMerkleRoot, merkleroot, 32);
 	free(merkleroot);
-	memset(work->data + 4 + 32 + 32 + 4 + 4, 0, 4); /* nonce */
-
-	hex2bin(work->data + 4 + 32 + 32 + 4 + 4 + 4, workpadding, 48);
+	memset(&work->header.nNonce, 0, 4); /* nonce */
 
 	if (opt_debug) {
-		char *header = bin2hex(work->data, 128);
+		char *header = bin2hex(work->whole_block, 185);
 
 		applog(LOG_DEBUG, "Generated GBT header %s", header);
 		applog(LOG_DEBUG, "Work coinbase %s", work->coinbase);
@@ -1945,15 +1953,15 @@ static bool gbt_decode(struct pool *pool, json_t *res_val)
 
 static bool getwork_decode(json_t *res_val, struct work *work)
 {
-	if (unlikely(!jobj_binary(res_val, "data", work->data, sizeof(work->data), true))) {
+	if (unlikely(!jobj_binary(res_val, "data", work->whole_block, 185, true))) {
 		applog(LOG_ERR, "JSON inval data");
 		return false;
 	}
 
-	if (!jobj_binary(res_val, "midstate", work->midstate, sizeof(work->midstate), false)) {
-		// Calculate it ourselves
-		applog(LOG_DEBUG, "Calculating midstate locally");
-		calc_midstate(work);
+	work->txslen = jobj_binary_partial(res_val, "tx", work->whole_block + 185, 200000 - 185, true);
+	if (work->txslen < 0) {
+		applog(LOG_ERR, "JSON inval data");
+		return false;
 	}
 
 	if (unlikely(!jobj_binary(res_val, "target", work->target, sizeof(work->target), true))) {
@@ -2675,18 +2683,13 @@ static bool submit_upstream_work(struct work *work, CURL *curl, bool resubmit)
 
 	cgpu = get_thr_cgpu(thr_id);
 
-	endian_flip128(work->data, work->data);
-
 	/* build hex string */
-	hexstr = bin2hex(work->data, sizeof(work->data));
+	hexstr = bin2hex(work->whole_block, 185);
 
 	/* build JSON-RPC request */
 	if (work->gbt) {
 		char *gbt_block, *varint;
-		unsigned char data[80];
-
-		flip80(data, work->data);
-		gbt_block = bin2hex(data, 80);
+		gbt_block = bin2hex(work->whole_block, 185);
 
 		if (work->gbt_txns < 0xfd) {
 			uint8_t val = work->gbt_txns;
@@ -3981,11 +3984,7 @@ static int block_sort(struct block *blocka, struct block *blockb)
 /* Decode the current block difficulty which is in packed form */
 static void set_blockdiff(const struct work *work)
 {
-	uint8_t pow = work->data[72];
-	int powdiff = (8 * (0x1d - 3)) - (8 * (pow - 3));
-	uint32_t diff32 = be32toh(*((uint32_t *)(work->data + 72))) & 0x00FFFFFF;
-	double numerator = DM_SELECT(0xFFFFULL, 0xFFFFFFULL, 0xFFFFFFFFULL) << powdiff;
-	double ddiff = numerator / (double)diff32;
+	double ddiff = get_work_coindiff(work);
 
 	if (unlikely(current_diff != ddiff)) {
 		suffix_string(ddiff, block_diff, sizeof(block_diff), 0);
@@ -5741,7 +5740,7 @@ retry_stratum:
 
 			/* Only use GBT if it supports coinbase append and
 			 * submit coinbase */
-			if (append && submit) {
+			if (false/*append && submit*/) {
 				pool->has_gbt = true;
 				pool->rpc_req = gbt_req;
 			}
@@ -7302,7 +7301,7 @@ static void *watchdog_thread(void __maybe_unused *userdata)
 					temp, fanpercent, fanspeed, engineclock, memclock, vddc, activity, powertune);
 			}
 #endif
-			
+
 			/* Thread is waiting on getwork or disabled */
 			if (thr->getwork || *denable == DEV_DISABLED)
 				continue;
@@ -7865,7 +7864,7 @@ bool add_cgpu(struct cgpu_info *cgpu)
 {
 	static struct _cgpu_devid_counter *devids = NULL;
 	struct _cgpu_devid_counter *d;
-	
+
 	HASH_FIND_STR(devids, cgpu->drv->name, d);
 	if (d)
 		cgpu->device_id = ++d->lastid;
@@ -8293,7 +8292,7 @@ begin_bench:
 
 		cgpu->rolling = cgpu->total_mhashes = 0;
 	}
-	
+
 	cgtime(&total_tv_start);
 	cgtime(&total_tv_end);
 	get_datestamp(datestamp, sizeof(datestamp), &total_tv_start);

@@ -1018,6 +1018,7 @@ extern char *get_proxy(char *url, struct pool *pool);
 extern void __bin2hex(char *s, const unsigned char *p, size_t len);
 extern char *bin2hex(const unsigned char *p, size_t len);
 extern bool hex2bin(unsigned char *p, const char *hexstr, size_t len);
+extern int hex2bin_partial(unsigned char *p, const char *hexstr, size_t maxlen);
 
 typedef bool (*sha256_func)(struct thr_info*, const unsigned char *pmidstate,
 	unsigned char *pdata,
@@ -1300,7 +1301,7 @@ struct pool {
 	char *gbt_workid;
 	int gbt_expires;
 	uint32_t gbt_version;
-	uint32_t curtime;
+	uint64_t curtime;
 	uint32_t gbt_bits;
 	unsigned char *txn_hashes;
 	int gbt_txns;
@@ -1322,11 +1323,35 @@ struct pool {
 #define GETWORK_MODE_STRATUM 'S'
 #define GETWORK_MODE_GBT 'G'
 
+#pragma pack(push, 4)
+struct CBlockHeader
+{
+    // header
+    int32_t  nVersion;
+    uint8_t  hashPrevBlock[32];
+    uint8_t  hashMerkleRoot[32];
+    int64_t  nTime;
+    uint32_t nBits;
+    uint32_t nHeight;
+    uint32_t nNonce;
+
+    // Spread mining extensions:
+    uint8_t hashWholeBlock[32]; // proof of whole block knowledge
+    uint8_t MinerSignature[65]; // proof of private key knowledge
+};
+#pragma pack(pop)
+
 struct work {
-	unsigned char	data[128];
-	unsigned char	midstate[32];
-	unsigned char	target[32];
-	unsigned char	hash[32];
+    union
+    {
+        struct CBlockHeader header;
+        uint8_t whole_block[200000];
+    };
+	uint8_t kinv[32];
+	uint8_t pmr[32];
+	uint8_t	target[32];
+	uint8_t hash[32];
+	int txslen;
 
 	unsigned char	device_target[32];
 	double		device_diff;

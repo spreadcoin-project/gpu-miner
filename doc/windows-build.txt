@@ -1,4 +1,4 @@
-######################################################################################
+﻿######################################################################################
 #                                                                                    #
 #          Native WIN32 setup and build instructions (on mingw32/Windows):           #
 #                                                                                    #
@@ -44,6 +44,10 @@ later.
 During installation, select all the check boxes (excluding "Fortran Compiler") so that
 everything is installed.
 
+After installation go to C:\MinGW\msys\1.0\etc and create file fstab with content
+
+    c:/mingw		/mingw
+
 **************************************************************************************
 * Run the MSYS shell for the first time to create your user directory                *
 **************************************************************************************
@@ -73,9 +77,7 @@ when unzipped.
 * Install AMD APP SDK, latest version (only if you want GPU mining)                  *
 **************************************************************************************
 Go to this url for the latest AMD APP SDK:
- http://developer.amd.com/tools/heterogeneous-computing/amd-accelerated-parallel-processing-app-sdk/downloads/
-Go to this url for legacy AMD APP SDK's:
- http://developer.amd.com/tools/heterogeneous-computing/amd-accelerated-parallel-processing-app-sdk/downloads/download-archive/
+ http://developer.amd.com/tools-and-sdks/opencl-zone/amd-accelerated-parallel-processing-app-sdk/
 Download and install the Windows 32 bit version.
 Copy the folders in \Program Files (x86)\AMD APP\include to \MinGW\include
 Copy \Program Files (x86)\AMD APP\lib\x86\libOpenCL.a to \MinGW\lib
@@ -143,7 +145,7 @@ to the next.
       CFLAGS="-O2 -msse2" ./configure (additional config options, see below)
       make
       strip sgminer.exe  <== only do this if you are not compiling for debugging
-      
+
 In the event ther are error messages, you MAY have to start from scratch by going
 back to the "Install AMD APP SDK, latest version" step because these lines will modify
 your files from the original form.

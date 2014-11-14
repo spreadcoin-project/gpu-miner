@@ -636,16 +636,17 @@ static const int hex2bin_tbl[256] = {
 	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
 	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
 };
-bool hex2bin(unsigned char *p, const char *hexstr, size_t len)
+
+int hex2bin_partial(unsigned char *p, const char *hexstr, size_t maxlen)
 {
 	int nibble1, nibble2;
 	unsigned char idx;
-	bool ret = false;
+	int len = maxlen;
 
 	while (*hexstr && len) {
 		if (unlikely(!hexstr[1])) {
 			applog(LOG_ERR, "hex2bin str truncated");
-			return ret;
+			return -1;
 		}
 
 		idx = *hexstr++;
@@ -655,16 +656,22 @@ bool hex2bin(unsigned char *p, const char *hexstr, size_t len)
 
 		if (unlikely((nibble1 < 0) || (nibble2 < 0))) {
 			applog(LOG_ERR, "hex2bin scan failed");
-			return ret;
+			return -1;
 		}
 
 		*p++ = (((unsigned char)nibble1) << 4) | ((unsigned char)nibble2);
 		--len;
 	}
 
-	if (likely(len == 0 && *hexstr == 0))
-		ret = true;
-	return ret;
+	if (*hexstr != 0)
+        return -1;
+
+	return maxlen - len;
+}
+
+bool hex2bin(unsigned char *p, const char *hexstr, size_t len)
+{
+    return hex2bin_partial(p, hexstr, len) == len;
 }
 
 bool fulltest(const unsigned char *hash, const unsigned char *target)
@@ -1718,7 +1725,7 @@ static bool send_version(struct pool *pool, json_t *val)
 {
 	char s[RBUFSIZE];
 	int id = json_integer_value(json_object_get(val, "id"));
-	
+
 	if (!id)
 		return false;
 
