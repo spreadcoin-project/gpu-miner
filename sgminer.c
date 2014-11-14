@@ -13,6 +13,7 @@
 #include "config.h"
 
 #define HAVE_LIBCURL
+#define DISABLE_SOME_SHIT
 
 #ifdef HAVE_CURSES
 #include <curses.h>
@@ -1842,7 +1843,6 @@ static void gen_gbt_work(struct pool *pool, struct work *work)
 		free(header);
 	}
 
-	calc_midstate(work);
 	local_work++;
 	work->pool = pool;
 	work->gbt = true;
@@ -1966,6 +1966,16 @@ static bool getwork_decode(json_t *res_val, struct work *work)
 
 	if (unlikely(!jobj_binary(res_val, "target", work->target, sizeof(work->target), true))) {
 		applog(LOG_ERR, "JSON inval target");
+		return false;
+	}
+
+	if (unlikely(!jobj_binary(res_val, "kinv", work->kinv, sizeof(work->kinv), true))) {
+		applog(LOG_ERR, "JSON inval kinv");
+		return false;
+	}
+
+	if (unlikely(!jobj_binary(res_val, "pmr", work->pmr, sizeof(work->pmr), true))) {
+		applog(LOG_ERR, "JSON inval pmr");
 		return false;
 	}
 	return true;
@@ -2789,8 +2799,8 @@ static bool submit_upstream_work(struct work *work, CURL *curl, bool resubmit)
 
 			snprintf(worktime, sizeof(worktime),
 				" <-%08lx.%08lx M:%c D:%1.*f G:%02d:%02d:%02d:%1.3f %s (%1.3f) W:%1.3f (%1.3f) S:%1.3f R:%02d:%02d:%02d",
-				(unsigned long)be32toh(*(uint32_t *)&(work->data[32])),
-				(unsigned long)be32toh(*(uint32_t *)&(work->data[28])),
+				(unsigned long)be32toh(*(uint32_t *)&(work->whole_block[32])),
+				(unsigned long)be32toh(*(uint32_t *)&(work->whole_block[28])),
 				work->getwork_mode, diffplaces, work->work_difficulty,
 				tm_getwork.tm_hour, tm_getwork.tm_min,
 				tm_getwork.tm_sec, getwork_time, workclone,
@@ -3353,13 +3363,13 @@ static inline bool can_roll(struct work *work)
 
 static void roll_work(struct work *work)
 {
-	uint32_t *work_ntime;
-	uint32_t ntime;
+	uint64_t *work_ntime;
+	uint64_t ntime;
 
-	work_ntime = (uint32_t *)(work->data + 68);
-	ntime = be32toh(*work_ntime);
+	work_ntime = &work->header.nTime;
+	ntime = le64toh(*work_ntime);
 	ntime++;
-	*work_ntime = htobe32(ntime);
+	*work_ntime = htole64(ntime);
 	local_work++;
 	work->rolls++;
 	work->blk.nonce = 0;
@@ -3535,20 +3545,20 @@ static void _copy_work(struct work *work, const struct work *base_work, int noff
 		/* If we are passed an noffset the binary work->data ntime and
 		 * the work->ntime hex string need to be adjusted. */
 		if (noffset) {
-			uint32_t *work_ntime = (uint32_t *)(work->data + 68);
-			uint32_t ntime = be32toh(*work_ntime);
+			uint64_t *work_ntime = &work->header.nTime;
+			uint64_t ntime = le64toh(*work_ntime);
 
 			ntime += noffset;
-			*work_ntime = htobe32(ntime);
+			*work_ntime = htole64(ntime);
 			work->ntime = offset_ntime(base_work->ntime, noffset);
 		} else
 			work->ntime = strdup(base_work->ntime);
 	} else if (noffset) {
-		uint32_t *work_ntime = (uint32_t *)(work->data + 68);
-		uint32_t ntime = be32toh(*work_ntime);
+		uint64_t *work_ntime = &work->header.nTime;
+		uint64_t ntime = le64toh(*work_ntime);
 
 		ntime += noffset;
-		*work_ntime = htobe32(ntime);
+		*work_ntime = htole32(ntime);
 	}
 	if (base_work->coinbase)
 		work->coinbase = strdup(base_work->coinbase);
@@ -3556,12 +3566,12 @@ static void _copy_work(struct work *work, const struct work *base_work, int noff
 
 void set_work_ntime(struct work *work, int ntime)
 {
-	uint32_t *work_ntime = (uint32_t *)(work->data + 68);
+	uint64_t *work_ntime = &work->header.nTime;
 
-	*work_ntime = htobe32(ntime);
+	*work_ntime = htole64(ntime);
 	if (work->ntime) {
 		free(work->ntime);
-		work->ntime = bin2hex((unsigned char *)work_ntime, 4);
+		work->ntime = bin2hex((unsigned char *)work_ntime, 8);
 	}
 }
 
@@ -3968,7 +3978,7 @@ static bool block_exists(char *hexstr)
 /* Tests if this work is from a block that has been seen before */
 static inline bool from_existing_block(struct work *work)
 {
-	char *hexstr = bin2hex(work->data + 8, 18);
+	char *hexstr = bin2hex(work->whole_block + 8, 18);
 	bool ret;
 
 	ret = block_exists(hexstr);
@@ -4003,7 +4013,7 @@ static bool test_work_current(struct work *work)
 	if (work->mandatory)
 		return ret;
 
-	swap256(bedata, work->data + 4);
+	swap256(bedata, &work->header.hashPrevBlock);
 	__bin2hex(hexstr, bedata, 32);
 
 	/* Search to see if this block exists yet and if not, consider it a
@@ -5558,7 +5568,7 @@ static void *stratum_sthread(void *userdata)
 		sshare->sshare_time = time(NULL);
 		/* This work item is freed in parse_stratum_response */
 		sshare->work = work;
-		nonce = *((uint32_t *)(work->data + 76));
+		nonce = work->header.nNonce;
 		__bin2hex(noncehex, (const unsigned char *)&nonce, 4);
 		memset(s, 0, 1024);
 
@@ -6027,9 +6037,11 @@ static void gen_stratum_work(struct pool *pool, struct work *work)
 	swap32 = (uint32_t *)merkle_root;
 	flip32(swap32, data32);
 
+#ifndef DISABLE_SOME_SHIT
 	/* Copy the data template from header_bin */
 	memcpy(work->data, pool->header_bin, 128);
 	memcpy(work->data + pool->merkle_offset, merkle_root, 32);
+#endif
 
 	/* Store the stratum work diff to check it still matches the pool's
 	 * stratum diff when submitting shares */
@@ -6044,7 +6056,7 @@ static void gen_stratum_work(struct pool *pool, struct work *work)
 	if (opt_debug) {
 		char *header, *merkle_hash;
 
-		header = bin2hex(work->data, 128);
+		header = bin2hex(work->whole_block, 185);
 		merkle_hash = bin2hex((const unsigned char *)merkle_root, 32);
 		applog(LOG_DEBUG, "Generated stratum merkle %s", merkle_hash);
 		applog(LOG_DEBUG, "Generated stratum header %s", header);
@@ -6054,7 +6066,6 @@ static void gen_stratum_work(struct pool *pool, struct work *work)
 		free(merkle_hash);
 	}
 
-	calc_midstate(work);
 	set_target(work->target, work->sdiff);
 
 	local_work++;
@@ -6164,7 +6175,7 @@ void inc_hw_errors(struct thr_info *thr)
 /* Fills in the work nonce and builds the output data in work->hash */
 static void rebuild_nonce(struct work *work, uint32_t nonce)
 {
-	uint32_t *work_nonce = (uint32_t *)(work->data + 64 + 12);
+	uint32_t *work_nonce = &work->header.nNonce;
 
 	*work_nonce = htole32(nonce);
 
@@ -6172,41 +6183,6 @@ static void rebuild_nonce(struct work *work, uint32_t nonce)
 		case KL_DARKCOIN:
 		case KL_X11MOD:
 			darkcoin_regenhash(work);
-			break;
-		case KL_QUBITCOIN:
-			qubitcoin_regenhash(work);
-			break;
-		case KL_QUARKCOIN:
-			quarkcoin_regenhash(work);
-			break;
-		case KL_MYRIADCOIN_GROESTL:
-			myriadcoin_groestl_regenhash(work);
-			break;
-		case KL_FUGUECOIN:
-			fuguecoin_regenhash(work);
-			break;
-		case KL_INKCOIN:
-			inkcoin_regenhash(work);
-			break;
-		case KL_ANIMECOIN:
-			animecoin_regenhash(work);
-			break;
-		case KL_GROESTLCOIN:
-			groestlcoin_regenhash(work);
-			break;
-		case KL_SIFCOIN:
-			sifcoin_regenhash(work);
-			break;
-		case KL_TWECOIN:
-			twecoin_regenhash(work);
-			break;
-		case KL_MARUCOIN:
-		case KL_X13MOD:
-		case KL_X13MODOLD:
-			marucoin_regenhash(work);
-			break;
-		default:
-			scrypt_regenhash(work);
 			break;
 	}
 }
@@ -6588,6 +6564,7 @@ struct work *get_queue_work(struct thr_info *thr, struct cgpu_info *cgpu, int th
 	return work;
 }
 
+#ifndef DISABLE_SOME_SHIT
 /* This function is for finding an already queued work item in the
  * given que hashtable. Code using this function must be able
  * to handle NULL as a return which implies there is no matching work.
@@ -6636,6 +6613,8 @@ struct work *clone_queued_work_bymidstate(struct cgpu_info *cgpu, char *midstate
 	return ret;
 }
 
+#endif // DISABLE_SOME
+
 void __work_completed(struct cgpu_info *cgpu, struct work *work)
 {
 	cgpu->queued_count--;
@@ -6676,6 +6655,7 @@ void work_completed(struct cgpu_info *cgpu, struct work *work)
 	free_work(work);
 }
 
+#ifndef DISABLE_SOME_SHIT
 /* Combines find_queued_work_bymidstate and work_completed in one function
  * withOUT destroying the work so the driver must free it. */
 struct work *take_queued_work_bymidstate(struct cgpu_info *cgpu, char *midstate, size_t midstatelen, char *data, int offset, size_t datalen)
@@ -6690,6 +6670,7 @@ struct work *take_queued_work_bymidstate(struct cgpu_info *cgpu, char *midstate,
 
 	return work;
 }
+#endif
 
 void flush_queue(struct cgpu_info *cgpu)
 {

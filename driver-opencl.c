@@ -350,7 +350,7 @@ char *set_gpu_threads(char *arg)
 		for (i = device; i < MAX_GPUDEVICES; i++)
 			gpus[i].threads = gpus[0].threads;
 	}
-	
+
 	return NULL;
 }
 
@@ -362,7 +362,7 @@ char *set_gpu_engine(char *arg)
 	nextptr = strtok(arg, ",");
 	if (nextptr == NULL)
 		return "Invalid parameters for set gpu engine";
-	get_intrangeexitval(nextptr, &min_val, &gpu_val, &exit_val); 
+	get_intrangeexitval(nextptr, &min_val, &gpu_val, &exit_val);
 	if (min_val < 0 || min_val > 9999 || gpu_val < 0 || gpu_val > 9999 || exit_val < 0 || exit_val > 9999)
 		return "Invalid value passed to set_gpu_engine";
 
@@ -438,7 +438,7 @@ char *set_gpu_memclock(char *arg)
 		return "Invalid parameters for set gpu memclock";
 	get_intexitval(nextptr, &val, &exit_val);
 
-	if (val < 0 || val > 9999 || exit_val < 0 || exit_val > 9999) 
+	if (val < 0 || val > 9999 || exit_val < 0 || exit_val > 9999)
 		return "Invalid value passed to set_gpu_memclock";
 
 	gpus[device].gpu_memclock = val;
@@ -447,7 +447,7 @@ char *set_gpu_memclock(char *arg)
 
 	while ((nextptr = strtok(NULL, ",")) != NULL) {
 		get_intexitval(nextptr, &val, &exit_val);
-		if (val < 0 || val > 9999 || exit_val < 0 || exit_val > 9999) 
+		if (val < 0 || val > 9999 || exit_val < 0 || exit_val > 9999)
 			return "Invalid value passed to set_gpu_memclock";
 
 		gpus[device].gpu_memclock = val;
@@ -961,7 +961,7 @@ retry: // TODO: refactor
 
 		intvar = curses_input("Set GPU scan intensity (d or "
 							  MIN_INTENSITY_STR " -> "
-							  MAX_INTENSITY_STR ")");		
+							  MAX_INTENSITY_STR ")");
 		if (!intvar) {
 			wlogprint("Invalid input\n");
 			goto retry;
@@ -1082,14 +1082,14 @@ retry: // TODO: refactor
 		struct cgpu_info *cgpu;
 		int rawintensity;
 		char *intvar;
-		
+
 		if (selected)
 		  selected = curses_int("Select GPU to change raw intensity on");
 		if (selected < 0 || selected >= nDevs) {
 		  wlogprint("Invalid selection\n");
 		  goto retry;
 		}
-		
+
 		intvar = curses_input("Set raw GPU scan intensity (" MIN_RAWINTENSITY_STR " -> " MAX_RAWINTENSITY_STR ")");
 		if (!intvar) {
 		  wlogprint("Invalid input\n");
@@ -1110,7 +1110,7 @@ retry: // TODO: refactor
 		gpus[selected].dynamic = false;
 		gpus[selected].intensity = 0; // Disable intensity when enabling intensity
 		gpus[selected].xintensity = 0; // Disable xintensity when enabling intensity
-		gpus[selected].rawintensity = rawintensity; 
+		gpus[selected].rawintensity = rawintensity;
 
 		if ((gpus[selected].kernel == KL_X11MOD) || (gpus[selected].kernel == KL_X13MOD || (gpus[selected].kernel == KL_X13MODOLD))) {
 			for (i = 0; i < mining_threads; ++i) {
@@ -1176,39 +1176,16 @@ void manage_gpu(void)
 #define CL_SET_VARG(args, var) status |= clSetKernelArg(*kernel, num++, args * sizeof(uint), (void *)var)
 #define CL_SET_ARG_N(n,var) status |= clSetKernelArg(*kernel, n, sizeof(var), (void *)&var)
 
-static cl_int queue_scrypt_kernel(_clState *clState, dev_blk_ctx *blk, __maybe_unused cl_uint threads)
-{
-	unsigned char *midstate = blk->work->midstate;
-	cl_kernel *kernel = &clState->kernel;
-	unsigned int num = 0;
-	cl_uint le_target;
-	cl_int status = 0;
-
-	le_target = *(cl_uint *)(blk->work->device_target + 28);
-	memcpy(clState->cldata, blk->work->data, 80);
-	status = clEnqueueWriteBuffer(clState->commandQueue, clState->CLbuffer0, true, 0, 80, clState->cldata, 0, NULL,NULL);
-
-	CL_SET_ARG(clState->CLbuffer0);
-	CL_SET_ARG(clState->outputBuffer);
-	CL_SET_ARG(clState->padbuffer8);
-	CL_SET_VARG(4, &midstate[0]);
-	CL_SET_VARG(4, &midstate[16]);
-	CL_SET_ARG(le_target);
-
-	return status;
-}
-
 static cl_int queue_sph_kernel(_clState *clState, dev_blk_ctx *blk, __maybe_unused cl_uint threads)
 {
-	unsigned char *midstate = blk->work->midstate;
 	cl_kernel *kernel = &clState->kernel;
 	unsigned int num = 0;
 	cl_ulong le_target;
 	cl_int status = 0;
 
 	le_target = *(cl_ulong *)(blk->work->device_target + 24);
-	flip80(clState->cldata, blk->work->data);
-	status = clEnqueueWriteBuffer(clState->commandQueue, clState->CLbuffer0, true, 0, 80, clState->cldata, 0, NULL,NULL);
+//	flip80(clState->cldata, blk->work->data);
+	status = clEnqueueWriteBuffer(clState->commandQueue, clState->CLbuffer0, true, 0, 200000, /*clState->cldata*/blk->work->whole_block, 0, NULL,NULL);
 
 	CL_SET_ARG(clState->CLbuffer0);
 	CL_SET_ARG(clState->outputBuffer);
@@ -1219,15 +1196,14 @@ static cl_int queue_sph_kernel(_clState *clState, dev_blk_ctx *blk, __maybe_unus
 
 static cl_int queue_x11mod_kernel(_clState *clState, dev_blk_ctx *blk, __maybe_unused cl_uint threads)
 {
-	unsigned char *midstate = blk->work->midstate;
 	cl_kernel *kernel;
 	unsigned int num = 0;
 	cl_ulong le_target;
 	cl_int status = 0;
 
 	le_target = *(cl_ulong *)(blk->work->device_target + 24);
-	flip80(clState->cldata, blk->work->data);
-	status = clEnqueueWriteBuffer(clState->commandQueue, clState->CLbuffer0, true, 0, 80, clState->cldata, 0, NULL,NULL);
+	//flip80(clState->cldata, blk->work->data);
+	status = clEnqueueWriteBuffer(clState->commandQueue, clState->CLbuffer0, true, 0, 200000, /*clState->cldata*/blk->work->whole_block, 0, NULL,NULL);
 
 //clbuffer, hashes
 	kernel = &clState->kernel_blake;
@@ -1253,96 +1229,6 @@ static cl_int queue_x11mod_kernel(_clState *clState, dev_blk_ctx *blk, __maybe_u
 	CL_SET_ARG_N(0,clState->hash_buffer);
 //hashes, output, target
 	kernel = &clState->kernel_echo;
-	CL_SET_ARG_N(0,clState->hash_buffer);
-	CL_SET_ARG_N(1,clState->outputBuffer);
-	CL_SET_ARG_N(2,le_target);
-
-	return status;
-}
-
-static cl_int queue_x13mod_kernel(_clState *clState, dev_blk_ctx *blk, __maybe_unused cl_uint threads)
-{
-	unsigned char *midstate = blk->work->midstate;
-	cl_kernel *kernel;
-	unsigned int num = 0;
-	cl_ulong le_target;
-	cl_int status = 0;
-
-	le_target = *(cl_ulong *)(blk->work->device_target + 24);
-	flip80(clState->cldata, blk->work->data);
-	status = clEnqueueWriteBuffer(clState->commandQueue, clState->CLbuffer0, true, 0, 80, clState->cldata, 0, NULL,NULL);
-
-//clbuffer, hashes
-	kernel = &clState->kernel_blake;
-	CL_SET_ARG_N(0,clState->CLbuffer0);
-	CL_SET_ARG_N(1,clState->hash_buffer);
-	kernel = &clState->kernel_bmw;
-	CL_SET_ARG_N(0,clState->hash_buffer);
-	kernel = &clState->kernel_groestl;
-	CL_SET_ARG_N(0,clState->hash_buffer);
-	kernel = &clState->kernel_skein;
-	CL_SET_ARG_N(0,clState->hash_buffer);
-	kernel = &clState->kernel_jh;
-	CL_SET_ARG_N(0,clState->hash_buffer);
-	kernel = &clState->kernel_keccak;
-	CL_SET_ARG_N(0,clState->hash_buffer);
-	kernel = &clState->kernel_luffa;
-	CL_SET_ARG_N(0,clState->hash_buffer);
-	kernel = &clState->kernel_cubehash;
-	CL_SET_ARG_N(0,clState->hash_buffer);
-	kernel = &clState->kernel_shavite;
-	CL_SET_ARG_N(0,clState->hash_buffer);
-	kernel = &clState->kernel_simd;
-	CL_SET_ARG_N(0,clState->hash_buffer);
-	kernel = &clState->kernel_echo;
-	CL_SET_ARG_N(0,clState->hash_buffer);
-	kernel = &clState->kernel_hamsi;
-	CL_SET_ARG_N(0,clState->hash_buffer);
-//hashes, output, target
-	kernel = &clState->kernel_fugue;
-	CL_SET_ARG_N(0,clState->hash_buffer);
-	CL_SET_ARG_N(1,clState->outputBuffer);
-	CL_SET_ARG_N(2,le_target);
-
-	return status;
-}
-
-static cl_int queue_x13modold_kernel(_clState *clState, dev_blk_ctx *blk, __maybe_unused cl_uint threads)
-{
-	unsigned char *midstate = blk->work->midstate;
-	cl_kernel *kernel;
-	unsigned int num = 0;
-	cl_ulong le_target;
-	cl_int status = 0;
-
-	le_target = *(cl_ulong *)(blk->work->device_target + 24);
-	flip80(clState->cldata, blk->work->data);
-	status = clEnqueueWriteBuffer(clState->commandQueue, clState->CLbuffer0, true, 0, 80, clState->cldata, 0, NULL,NULL);
-
-//clbuffer, hashes
-	kernel = &clState->kernel_blake;
-	CL_SET_ARG_N(0,clState->CLbuffer0);
-	CL_SET_ARG_N(1,clState->hash_buffer);
-	kernel = &clState->kernel_bmw;
-	CL_SET_ARG_N(0,clState->hash_buffer);
-	kernel = &clState->kernel_groestl;
-	CL_SET_ARG_N(0,clState->hash_buffer);
-	kernel = &clState->kernel_skein;
-	CL_SET_ARG_N(0,clState->hash_buffer);
-	kernel = &clState->kernel_jh;
-	CL_SET_ARG_N(0,clState->hash_buffer);
-	kernel = &clState->kernel_keccak;
-	CL_SET_ARG_N(0,clState->hash_buffer);
-	kernel = &clState->kernel_luffa;
-	CL_SET_ARG_N(0,clState->hash_buffer);
-	kernel = &clState->kernel_cubehash;
-	CL_SET_ARG_N(0,clState->hash_buffer);
-	kernel = &clState->kernel_shavite;
-	CL_SET_ARG_N(0,clState->hash_buffer);
-	kernel = &clState->kernel_simd;
-	CL_SET_ARG_N(0,clState->hash_buffer);
-//hashes, output, target
-	kernel = &clState->kernel_echo_hamsi_fugue;
 	CL_SET_ARG_N(0,clState->hash_buffer);
 	CL_SET_ARG_N(1,clState->outputBuffer);
 	CL_SET_ARG_N(2,le_target);
@@ -1708,19 +1594,6 @@ static bool opencl_thread_init(struct thr_info *thr)
 	switch (clState->chosen_kernel) {
 	case KL_X11MOD:
 		thrdata->queue_kernel_parameters = &queue_x11mod_kernel;
-		break;
-	case KL_X13MOD:
-		thrdata->queue_kernel_parameters = &queue_x13mod_kernel;
-		break;
-	case KL_X13MODOLD:
-		thrdata->queue_kernel_parameters = &queue_x13modold_kernel;
-		break;
-	case KL_ALEXKARNEW:
-	case KL_ALEXKAROLD:
-	case KL_CKOLIVAS:
-	case KL_PSW:
-	case KL_ZUIKKIS:
-		thrdata->queue_kernel_parameters = &queue_scrypt_kernel;
 		break;
 	case KL_DARKCOIN:
 	case KL_QUBITCOIN:

@@ -398,7 +398,7 @@ _clState *initCl(unsigned int gpu, char *name, size_t nameSize)
 	find = strstr(extensions, camo);
 	if (find)
 		clState->hasBitAlign = true;
-		
+
 	/* Check for OpenCL >= 1.0 support, needed for global offset parameter usage. */
 	char * devoclver = malloc(1024);
 	const char * ocl10 = "OpenCL 1.0";
@@ -430,7 +430,7 @@ _clState *initCl(unsigned int gpu, char *name, size_t nameSize)
 		return NULL;
 	}
 	applog(LOG_DEBUG, "Max work group size reported %d", (int)(clState->max_work_size));
-	
+
 	size_t compute_units = 0;
 	status = clGetDeviceInfo(devices[gpu], CL_DEVICE_MAX_COMPUTE_UNITS, sizeof(size_t), (void *)&compute_units, NULL);
 	if (status != CL_SUCCESS) {
@@ -979,7 +979,7 @@ built:
 		}
 	}
 
-	clState->CLbuffer0 = clCreateBuffer(clState->context, CL_MEM_READ_ONLY, 128, NULL, &status);
+	clState->CLbuffer0 = clCreateBuffer(clState->context, CL_MEM_READ_ONLY, 200000, NULL, &status);
 	if (status != CL_SUCCESS) {
 		applog(LOG_ERR, "Error %d: clCreateBuffer (CLbuffer0)", status);
 		return NULL;
