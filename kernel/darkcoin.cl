@@ -4,7 +4,7 @@
  * ==========================(LICENSE BEGIN)============================
  *
  * Copyright (c) 2014  phm
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
  * "Software"), to deal in the Software without restriction, including
@@ -12,10 +12,10 @@
  * distribute, sublicense, and/or sell copies of the Software, and to
  * permit persons to whom the Software is furnished to do so, subject to
  * the following conditions:
- * 
+ *
  * The above copyright notice and this permission notice shall be
  * included in all copies or substantial portions of the Software.
- * 
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
  * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
  * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
@@ -130,10 +130,13 @@ __kernel void search(__global unsigned char* block, volatile __global uint* outp
     sph_u64 S0 = 0, S1 = 0, S2 = 0, S3 = 0;
     sph_u64 T0 = SPH_C64(0xFFFFFFFFFFFFFC00) + (80 << 3), T1 = 0xFFFFFFFFFFFFFFFF;;
 
-    if ((T0 = SPH_T64(T0 + 1024)) < 1024)
+    T0 = 1024;
+    T1 = 0;
+
+/*    if ((T0 = SPH_T64(T0 + 1024)) < 1024)
     {
         T1 = SPH_T64(T1 + 1);
-    }
+    }*/
     sph_u64 M0, M1, M2, M3, M4, M5, M6, M7;
     sph_u64 M8, M9, MA, MB, MC, MD, ME, MF;
     sph_u64 V0, V1, V2, V3, V4, V5, V6, V7;
@@ -148,14 +151,36 @@ __kernel void search(__global unsigned char* block, volatile __global uint* outp
     M7 = DEC64BE(block +  56);
     M8 = DEC64BE(block +  64);
     M9 = DEC64BE(block +  72);
-    M9 &= 0xFFFFFFFF00000000;
-    M9 ^= SWAP4(gid);
-    MA = 0x8000000000000000;
+    MA = DEC64BE(block +  80);
+    MA &= 0xFFFFFFFF00000000;
+    MA ^= SWAP4(gid);
+    MB = DEC64BE(block +  88);
+    MC = DEC64BE(block +  96);
+    MD = DEC64BE(block + 104);
+    ME = DEC64BE(block + 112);
+    MF = DEC64BE(block + 120);
+
+    COMPRESS64;
+
+    T0 = 1480;
+    T1 = 0;
+
+    M0 = DEC64BE(block + 128);
+    M1 = DEC64BE(block + 136);
+    M2 = DEC64BE(block + 144);
+    M3 = DEC64BE(block + 152);
+    M4 = DEC64BE(block + 160);
+    M5 = DEC64BE(block + 168);
+    M6 = DEC64BE(block + 176);
+    M7 = (((sph_u64)block[184]) << 56) | 0x80000000000000;
+    M8 = 0;
+    M9 = 0;
+    MA = 0;
     MB = 0;
     MC = 0;
     MD = 1;
     ME = 0;
-    MF = 0x280;
+    MF = 1480;
 
     COMPRESS64;
 
@@ -167,7 +192,14 @@ __kernel void search(__global unsigned char* block, volatile __global uint* outp
     hash.h8[5] = H5;
     hash.h8[6] = H6;
     hash.h8[7] = H7;
-}    
+/*
+    bool result = (H0 <= target);
+    if (result)
+        output[output[0xFF]++] = gid;
+
+    return;*/
+}
+
     // bmw
     sph_u64 BMW_H[16];
     for(unsigned u = 0; u < 16; u++)
@@ -290,7 +322,7 @@ __kernel void search(__global unsigned char* block, volatile __global uint* outp
     hash.h8[5] = SWAP8(h5);
     hash.h8[6] = SWAP8(h6);
     hash.h8[7] = SWAP8(h7);
- 
+
    // jh
 
     sph_u64 h0h = C64e(0x6fd14b963e00aa17), h0l = C64e(0x636a2e057a15d543), h1h = C64e(0x8a225e8d0c97ef0b), h1l = C64e(0xe9341259f2b3c361), h2h = C64e(0x891da0c1536f801e), h2l = C64e(0x2aa9056bea2b6d80), h3h = C64e(0x588eccdb2075baa6), h3l = C64e(0xa90f3a76baf83bf7);
@@ -317,7 +349,7 @@ __kernel void search(__global unsigned char* block, volatile __global uint* outp
             h6l ^= DEC64E(hash.h8[5]);
             h7h ^= DEC64E(hash.h8[6]);
             h7l ^= DEC64E(hash.h8[7]);
-        
+
             h0h ^= 0x80;
             h3l ^= 0x2000000000000;
         }
@@ -334,11 +366,11 @@ __kernel void search(__global unsigned char* block, volatile __global uint* outp
     hash.h8[5] = DEC64E(h6l);
     hash.h8[6] = DEC64E(h7h);
     hash.h8[7] = DEC64E(h7l);
-    
+
     // keccak
 
     sph_u64 a00 = 0, a01 = 0, a02 = 0, a03 = 0, a04 = 0;
-    sph_u64 a10 = 0, a11 = 0, a12 = 0, a13 = 0, a14 = 0; 
+    sph_u64 a10 = 0, a11 = 0, a12 = 0, a13 = 0, a14 = 0;
     sph_u64 a20 = 0, a21 = 0, a22 = 0, a23 = 0, a24 = 0;
     sph_u64 a30 = 0, a31 = 0, a32 = 0, a33 = 0, a34 = 0;
     sph_u64 a40 = 0, a41 = 0, a42 = 0, a43 = 0, a44 = 0;
@@ -715,7 +747,7 @@ __kernel void search(__global unsigned char* block, volatile __global uint* outp
 
     bool result = (Vb11 <= target);
     if (result)
-        output[output[0xFF]++] = SWAP4(gid);
+        output[output[0xFF]++] = gid;
 }
 
 #endif // DARKCOIN_CL

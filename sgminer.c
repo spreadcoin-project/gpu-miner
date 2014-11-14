@@ -6173,18 +6173,16 @@ void inc_hw_errors(struct thr_info *thr)
 }
 
 /* Fills in the work nonce and builds the output data in work->hash */
-static void rebuild_nonce(struct work *work, uint32_t nonce)
+static void rebuild_nonce(struct work *work, uint32_t nonce, bool orig)
 {
 	uint32_t *work_nonce = &work->header.nNonce;
 
 	*work_nonce = htole32(nonce);
 
-	switch (gpus[0].kernel) {
-		case KL_DARKCOIN:
-		case KL_X11MOD:
-			darkcoin_regenhash(work);
-			break;
-	}
+	if (orig)
+        darkcoin_regenhash(work);
+    else
+        darkcoin_regenhash2(work);
 }
 
 /* For testing a nonce against diff 1 */
@@ -6193,7 +6191,10 @@ bool test_nonce(struct work *work, uint32_t nonce)
 	uint32_t *hash_32 = (uint32_t *)(work->hash + 28);
 	uint32_t diff1targ;
 
-	rebuild_nonce(work, nonce);
+	rebuild_nonce(work, nonce, true);
+
+	struct work work2 = *work;
+	rebuild_nonce(&work2, nonce, false);
 	diff1targ = 0x0000ffffUL;
 
 	return (le32toh(*hash_32) <= diff1targ);
@@ -6204,7 +6205,7 @@ bool test_nonce_diff(struct work *work, uint32_t nonce, double diff)
 {
 	uint64_t *hash64 = (uint64_t *)(work->hash + 24), diff64;
 
-	rebuild_nonce(work, nonce);
+	rebuild_nonce(work, nonce, true);
 	diff64 = DM_SELECT(0x00000000ffff0000ULL, 0x000000ffff000000ULL, 0x0000ffff00000000ULL);
 	diff64 /= diff;
 

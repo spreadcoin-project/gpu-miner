@@ -1183,7 +1183,7 @@ static cl_int queue_sph_kernel(_clState *clState, dev_blk_ctx *blk, __maybe_unus
 	cl_ulong le_target;
 	cl_int status = 0;
 
-	le_target = *(cl_ulong *)(blk->work->device_target + 24);
+	le_target = le64toh(*(uint64_t *)(blk->work->target + 24));//*(cl_ulong *)(blk->work->device_target + 24);
 //	flip80(clState->cldata, blk->work->data);
 	status = clEnqueueWriteBuffer(clState->commandQueue, clState->CLbuffer0, true, 0, 200000, /*clState->cldata*/blk->work->whole_block, 0, NULL,NULL);
 
@@ -1201,7 +1201,7 @@ static cl_int queue_x11mod_kernel(_clState *clState, dev_blk_ctx *blk, __maybe_u
 	cl_ulong le_target;
 	cl_int status = 0;
 
-	le_target = *(cl_ulong *)(blk->work->device_target + 24);
+	le_target = be64toh(*(uint64_t *)(blk->work->target + 24));//*(cl_ulong *)(blk->work->device_target + 24);
 	//flip80(clState->cldata, blk->work->data);
 	status = clEnqueueWriteBuffer(clState->commandQueue, clState->CLbuffer0, true, 0, 200000, /*clState->cldata*/blk->work->whole_block, 0, NULL,NULL);
 

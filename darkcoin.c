@@ -47,6 +47,10 @@
 #include "sph/sph_simd.h"
 #include "sph/sph_echo.h"
 
+#define __constant
+#include "kernel/blake.cl"
+#undef __constant
+
 /* Move init out of loop, so init once externally, and then use one single memcpy with that bigger memory block */
 typedef struct {
     sph_blake512_context    blake1;
@@ -92,8 +96,9 @@ be32enc_vect(uint32_t *dst, const uint32_t *src, uint32_t len)
 	for (i = 0; i < len; i++)
 		dst[i] = htobe32(src[i]);
 }
+/*
 
-
+*/
 inline void xhash(void *state, const void *input)
 {
     init_Xhash_contexts();
@@ -104,7 +109,7 @@ inline void xhash(void *state, const void *input)
     //blake-bmw-groestl-sken-jh-meccak-luffa-cubehash-shivite-simd-echo
     memcpy(&ctx, &base_contexts, sizeof(base_contexts));
 
-    sph_blake512 (&ctx.blake1, input, 80);
+    sph_blake512 (&ctx.blake1, input, 185);
     sph_blake512_close (&ctx.blake1, hashA);
 
     sph_bmw512 (&ctx.bmw1, hashA, 64);
@@ -138,89 +143,103 @@ inline void xhash(void *state, const void *input)
     sph_echo512_close(&ctx.echo1, hashA);
 
     memcpy(state, hashA, 32);
+    return;
 
 }
 
-static const uint32_t diff1targ = 0x0000ffff;
+typedef uint64_t sph_u64;
 
+#define DEC64BE(x) be64toh(*(uint64_t*)(x))
+#define SWAP4(x) be32toh(x)
 
-/* Used externally as confirmation of correct OCL code */
-int darkcoin_test(unsigned char *pdata, const unsigned char *ptarget, uint32_t nonce)
+inline void xhash2(void *state, const void *input, uint32_t gid)
 {
-	uint32_t tmp_hash7, Htarg = le32toh(((const uint32_t *)ptarget)[7]);
-	uint32_t data[20], ohash[8];
-	//char *scratchbuf;
+    const uint8_t* block = input;
 
-	be32enc_vect(data, (const uint32_t *)pdata, 19);
-	data[19] = htobe32(nonce);
-	//scratchbuf = alloca(SCRATCHBUF_SIZE);
-	xhash(ohash, data);
-	tmp_hash7 = be32toh(ohash[7]);
+    sph_u64 H0 = SPH_C64(0x6A09E667F3BCC908), H1 = SPH_C64(0xBB67AE8584CAA73B);
+    sph_u64 H2 = SPH_C64(0x3C6EF372FE94F82B), H3 = SPH_C64(0xA54FF53A5F1D36F1);
+    sph_u64 H4 = SPH_C64(0x510E527FADE682D1), H5 = SPH_C64(0x9B05688C2B3E6C1F);
+    sph_u64 H6 = SPH_C64(0x1F83D9ABFB41BD6B), H7 = SPH_C64(0x5BE0CD19137E2179);
+    sph_u64 S0 = 0, S1 = 0, S2 = 0, S3 = 0;
+    sph_u64 T0 = SPH_C64(0xFFFFFFFFFFFFFC00) + (80 << 3), T1 = 0xFFFFFFFFFFFFFFFF;;
 
-	applog(LOG_DEBUG, "htarget %08lx diff1 %08lx hash %08lx",
-				(long unsigned int)Htarg,
-				(long unsigned int)diff1targ,
-				(long unsigned int)tmp_hash7);
-	if (tmp_hash7 > diff1targ)
-		return -1;
-	if (tmp_hash7 > Htarg)
-		return 0;
-	return 1;
+    T0 = 1024;
+    T1 = 0;
+
+/*    if ((T0 = SPH_T64(T0 + 1024)) < 1024)
+    {
+        T1 = SPH_T64(T1 + 1);
+    }*/
+    sph_u64 M0, M1, M2, M3, M4, M5, M6, M7;
+    sph_u64 M8, M9, MA, MB, MC, MD, ME, MF;
+    sph_u64 V0, V1, V2, V3, V4, V5, V6, V7;
+    sph_u64 V8, V9, VA, VB, VC, VD, VE, VF;
+    M0 = DEC64BE(block +   0);
+    M1 = DEC64BE(block +   8);
+    M2 = DEC64BE(block +  16);
+    M3 = DEC64BE(block +  24);
+    M4 = DEC64BE(block +  32);
+    M5 = DEC64BE(block +  40);
+    M6 = DEC64BE(block +  48);
+    M7 = DEC64BE(block +  56);
+    M8 = DEC64BE(block +  64);
+    M9 = DEC64BE(block +  72);
+    MA = DEC64BE(block +  80);
+    MA &= 0xFFFFFFFF00000000;
+    MA ^= SWAP4(gid);
+    MB = DEC64BE(block +  88);
+    MC = DEC64BE(block +  96);
+    MD = DEC64BE(block + 104);
+    ME = DEC64BE(block + 112);
+    MF = DEC64BE(block + 120);
+
+    COMPRESS64;
+
+    T0 = 1480;
+    T1 = 0;
+
+    M0 = DEC64BE(block + 128);
+    M1 = DEC64BE(block + 136);
+    M2 = DEC64BE(block + 144);
+    M3 = DEC64BE(block + 152);
+    M4 = DEC64BE(block + 160);
+    M5 = DEC64BE(block + 168);
+    M6 = DEC64BE(block + 176);
+    M7 = (((sph_u64)block[184]) << 56) | 0x80000000000000;
+    M8 = 0;
+    M9 = 0;
+    MA = 0;
+    MB = 0;
+    MC = 0;
+    MD = 1;
+    ME = 0;
+    MF = 1480;
+
+    COMPRESS64;
+
+    uint64_t h8[8];
+
+    h8[0] = be64toh(H0);
+    h8[1] = be64toh(H1);
+    h8[2] = be64toh(H2);
+    h8[3] = be64toh(H3);
+    h8[4] = be64toh(H4);
+    h8[5] = be64toh(H5);
+    h8[6] = be64toh(H6);
+    h8[7] = be64toh(H7);
+
+    memcpy(state, h8, 32);
+    return;
 }
 
 // Spread-FIXME: implement
 void darkcoin_regenhash(struct work *work)
 {
-        uint32_t data[20];
-        char *scratchbuf;
-        uint32_t *nonce = &work->header.nNonce;
-        uint32_t *ohash = (uint32_t *)(work->hash);
-
-       // be32enc_vect(data, (const uint32_t *)work->data, 19);
-      //  data[19] = htobe32(*nonce);
-        xhash(ohash, data);
+    xhash(work->hash, work->whole_block);
 }
 
-bool scanhash_darkcoin(struct thr_info *thr, const unsigned char __maybe_unused *pmidstate,
-		     unsigned char *pdata, unsigned char __maybe_unused *phash1,
-		     unsigned char __maybe_unused *phash, const unsigned char *ptarget,
-		     uint32_t max_nonce, uint32_t *last_nonce, uint32_t n)
+// Spread-FIXME: implement
+void darkcoin_regenhash2(struct work *work)
 {
-	uint32_t *nonce = (uint32_t *)(pdata + 76);
-	char *scratchbuf;
-	uint32_t data[20];
-	uint32_t tmp_hash7;
-	uint32_t Htarg = le32toh(((const uint32_t *)ptarget)[7]);
-	bool ret = false;
-
-	be32enc_vect(data, (const uint32_t *)pdata, 19);
-
-	while(1) {
-		uint32_t ostate[8];
-
-		*nonce = ++n;
-		data[19] = (n);
-		xhash(ostate, data);
-		tmp_hash7 = (ostate[7]);
-
-		applog(LOG_INFO, "data7 %08lx",
-					(long unsigned int)data[7]);
-
-		if (unlikely(tmp_hash7 <= Htarg)) {
-			((uint32_t *)pdata)[19] = htobe32(n);
-			*last_nonce = n;
-			ret = true;
-			break;
-		}
-
-		if (unlikely((n >= max_nonce) || thr->work_restart)) {
-			*last_nonce = n;
-			break;
-		}
-	}
-
-	return ret;
+    xhash2(work->hash, work->whole_block, work->header.nNonce);
 }
-
-
-
