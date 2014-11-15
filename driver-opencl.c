@@ -1194,7 +1194,7 @@ void prepare_work(struct work* work)
         pStart[Size++] = 7;
 
     // Fill rest of the buffer to ensure that there is no incentive to mine small blocks without transactions.
-    uint32_t *pFillBegin = (uint32_t*)(pStart + work->txslen);
+    uint32_t *pFillBegin = (uint32_t*)(pStart + Size);
     uint32_t *pFillEnd = (uint32_t*)(pStart + 200000);
     uint32_t *pFillFooter = max(pFillBegin, pFillEnd - 8);
 

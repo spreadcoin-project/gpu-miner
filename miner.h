@@ -1364,6 +1364,7 @@ struct data
 
 struct work {
     struct data data;
+    uint8_t pok[200000];
 	uint8_t kinv[32];
 	uint8_t pmr[32];
 	uint8_t	target[32];

@@ -1978,6 +1978,12 @@ static bool getwork_decode(json_t *res_val, struct work *work)
 		applog(LOG_ERR, "JSON inval pmr");
 		return false;
 	}
+
+	if (unlikely(!jobj_binary(res_val, "pok", work->pok, 200000, true))) {
+		applog(LOG_ERR, "JSON inval pok");
+		return false;
+	}
+
 	return true;
 }
 
