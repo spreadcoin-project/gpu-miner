@@ -1324,7 +1324,7 @@ struct pool {
 #define GETWORK_MODE_STRATUM 'S'
 #define GETWORK_MODE_GBT 'G'
 
-#pragma pack(push, 4)
+#pragma pack(push, 1)
 struct CBlockHeader
 {
     // header
@@ -1340,14 +1340,30 @@ struct CBlockHeader
     uint8_t hashWholeBlock[32]; // proof of whole block knowledge
     uint8_t MinerSignature[65]; // proof of private key knowledge
 };
+
+struct CPokHeader
+{
+    uint32_t nNonce;
+    int64_t  nTime;
+    uint8_t  MinerSignature[65];
+    uint32_t nVersion;
+    uint8_t  hashPrevBlock[32];
+    uint8_t  hashMerkleRoot[32];
+    uint32_t nBits;
+    uint32_t nHeight;
+};
+
+struct data
+{
+    struct CBlockHeader header;
+    uint8_t padding[7];
+    struct CPokHeader pok_header;
+    uint8_t txs[200000];
+} data;
 #pragma pack(pop)
 
 struct work {
-    union
-    {
-        struct CBlockHeader header;
-        uint8_t whole_block[200000];
-    };
+    struct data data;
 	uint8_t kinv[32];
 	uint8_t pmr[32];
 	uint8_t	target[32];

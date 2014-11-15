@@ -1176,6 +1176,38 @@ void manage_gpu(void)
 #define CL_SET_VARG(args, var) status |= clSetKernelArg(*kernel, num++, args * sizeof(uint), (void *)var)
 #define CL_SET_ARG_N(n,var) status |= clSetKernelArg(*kernel, n, sizeof(var), (void *)&var)
 
+void prepare_work(struct work* work)
+{
+    work->data.pok_header.nNonce = work->data.header.nNonce;
+    work->data.pok_header.nTime = work->data.header.nTime;
+    work->data.pok_header.nVersion = work->data.header.nVersion;
+    work->data.pok_header.nBits = work->data.header.nBits;
+    work->data.pok_header.nHeight = work->data.header.nHeight;
+    memcpy(work->data.pok_header.MinerSignature, work->data.header.MinerSignature, 65);
+    memcpy(work->data.pok_header.hashPrevBlock, work->data.header.hashPrevBlock, 32);
+    memcpy(work->data.pok_header.hashMerkleRoot, work->data.header.hashMerkleRoot, 32);
+
+    uint8_t* pStart = (uint8_t*)&work->data.pok_header;
+    uint32_t Size = work->txslen + 153;
+
+    while (Size % 4 != 0)
+        pStart[Size++] = 7;
+
+    // Fill rest of the buffer to ensure that there is no incentive to mine small blocks without transactions.
+    uint32_t *pFillBegin = (uint32_t*)(pStart + work->txslen);
+    uint32_t *pFillEnd = (uint32_t*)(pStart + 200000);
+    uint32_t *pFillFooter = max(pFillBegin, pFillEnd - 8);
+
+    memcpy(pFillFooter, work->data.header.hashPrevBlock, (pFillEnd - pFillFooter)*4);
+
+    uint32_t *pI;
+    for (pI = pFillFooter; pI < pFillEnd; pI++)
+        *pI |= 1;
+
+    for (pI = pFillFooter - 1; pI >= pFillBegin; pI--)
+        pI[0] = pI[3]*pI[7];
+}
+
 static cl_int queue_sph_kernel(_clState *clState, dev_blk_ctx *blk, __maybe_unused cl_uint threads)
 {
 	cl_kernel *kernel = &clState->kernel;
@@ -1184,8 +1216,11 @@ static cl_int queue_sph_kernel(_clState *clState, dev_blk_ctx *blk, __maybe_unus
 	cl_int status = 0;
 
 	le_target = le64toh(*(uint64_t *)(blk->work->target + 24));//*(cl_ulong *)(blk->work->device_target + 24);
+
+	prepare_work(blk->work);
+
 //	flip80(clState->cldata, blk->work->data);
-	status = clEnqueueWriteBuffer(clState->commandQueue, clState->CLbuffer0, true, 0, 200000, /*clState->cldata*/blk->work->whole_block, 0, NULL,NULL);
+	status = clEnqueueWriteBuffer(clState->commandQueue, clState->CLbuffer0, true, 0, sizeof(struct data), /*clState->cldata*/&blk->work->data, 0, NULL,NULL);
 
 	CL_SET_ARG(clState->CLbuffer0);
 	CL_SET_ARG(clState->outputBuffer);
@@ -1203,7 +1238,7 @@ static cl_int queue_x11mod_kernel(_clState *clState, dev_blk_ctx *blk, __maybe_u
 
 	le_target = be64toh(*(uint64_t *)(blk->work->target + 24));//*(cl_ulong *)(blk->work->device_target + 24);
 	//flip80(clState->cldata, blk->work->data);
-	status = clEnqueueWriteBuffer(clState->commandQueue, clState->CLbuffer0, true, 0, 200000, /*clState->cldata*/blk->work->whole_block, 0, NULL,NULL);
+	//status = clEnqueueWriteBuffer(clState->commandQueue, clState->CLbuffer0, true, 0, 200000, /*clState->cldata*/blk->work->whole_block, 0, NULL,NULL);
 
 //clbuffer, hashes
 	kernel = &clState->kernel_blake;

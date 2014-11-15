@@ -143,5 +143,5 @@ inline void xhash(void *state, const void *input)
 
 void darkcoin_regenhash(struct work *work)
 {
-    xhash(work->hash, work->whole_block);
+    xhash(work->hash, &work->data.header);
 }

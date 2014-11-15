@@ -453,7 +453,7 @@ static void sharelog(const char*disposition, const struct work*work)
 	t = (unsigned long int)(work->tv_work_found.tv_sec);
 	target = bin2hex(work->target, sizeof(work->target));
 	hash = bin2hex(work->hash, sizeof(work->hash));
-	data = bin2hex(work->whole_block, 185);
+	data = bin2hex((uint8_t*)&work->data.header, 185);
 
 	// timestamp,disposition,target,pool,dev,thr,sharehash,sharedata
 	rv = snprintf(s, sizeof(s), "%lu,%s,%s,%s,%s%u,%u,%s,%s\n", t, disposition, target, pool->rpc_url, cgpu->drv->name, cgpu->device_id, thr_id, hash, data);
@@ -1790,7 +1790,7 @@ static void update_gbt(struct pool *pool)
 /* Return the work coin/network difficulty */
 static double get_work_coindiff(const struct work *work)
 {
-    uint32_t nBits = le32toh(work->header.nBits);
+    uint32_t nBits = le32toh(work->data.header.nBits);
 	uint8_t pow = nBits >> 24;
 	int powdiff = (8 * (0x1d - 3)) - (8 * (pow - 3));
 	uint32_t diff32 = nBits & 0x00FFFFFF;
@@ -1815,10 +1815,10 @@ static void gen_gbt_work(struct pool *pool, struct work *work)
 	cg_dwlock(&pool->gbt_lock);
 	merkleroot = __gbt_merkleroot(pool);
 
-	memcpy(&work->header.nVersion, &pool->gbt_version, 4);
-	memcpy(&work->header.hashPrevBlock, pool->previousblockhash, 32);
-	memcpy(&work->header.nTime, &pool->curtime, 4);
-	memcpy(&work->header.nBits, &pool->gbt_bits, 4);
+	memcpy(&work->data.header.nVersion, &pool->gbt_version, 4);
+	memcpy(&work->data.header.hashPrevBlock, pool->previousblockhash, 32);
+	memcpy(&work->data.header.nTime, &pool->curtime, 4);
+	memcpy(&work->data.header.nBits, &pool->gbt_bits, 4);
 
 	memcpy(work->target, pool->gbt_target, 32);
 
@@ -1831,12 +1831,12 @@ static void gen_gbt_work(struct pool *pool, struct work *work)
 		work->job_id = strdup(pool->gbt_workid);
 	cg_runlock(&pool->gbt_lock);
 
-	memcpy(&work->header.hashMerkleRoot, merkleroot, 32);
+	memcpy(&work->data.header.hashMerkleRoot, merkleroot, 32);
 	free(merkleroot);
-	memset(&work->header.nNonce, 0, 4); /* nonce */
+	memset(&work->data.header.nNonce, 0, 4); /* nonce */
 
 	if (opt_debug) {
-		char *header = bin2hex(work->whole_block, 185);
+		char *header = bin2hex((uint8_t*)&work->data.header, 185);
 
 		applog(LOG_DEBUG, "Generated GBT header %s", header);
 		applog(LOG_DEBUG, "Work coinbase %s", work->coinbase);
@@ -1953,12 +1953,12 @@ static bool gbt_decode(struct pool *pool, json_t *res_val)
 
 static bool getwork_decode(json_t *res_val, struct work *work)
 {
-	if (unlikely(!jobj_binary(res_val, "data", work->whole_block, 185, true))) {
+	if (unlikely(!jobj_binary(res_val, "data", &work->data.header, 185, true))) {
 		applog(LOG_ERR, "JSON inval data");
 		return false;
 	}
 
-	work->txslen = jobj_binary_partial(res_val, "tx", work->whole_block + 185, 200000 - 185, true);
+	work->txslen = jobj_binary_partial(res_val, "tx", work->data.txs, 200000 - 185, true);
 	if (work->txslen < 0) {
 		applog(LOG_ERR, "JSON inval data");
 		return false;
@@ -2694,12 +2694,12 @@ static bool submit_upstream_work(struct work *work, CURL *curl, bool resubmit)
 	cgpu = get_thr_cgpu(thr_id);
 
 	/* build hex string */
-	hexstr = bin2hex(work->whole_block, 185);
+	hexstr = bin2hex((uint8_t*)&work->data.header, 185);
 
 	/* build JSON-RPC request */
 	if (work->gbt) {
 		char *gbt_block, *varint;
-		gbt_block = bin2hex(work->whole_block, 185);
+		gbt_block = bin2hex((uint8_t*)&work->data.header, 185);
 
 		if (work->gbt_txns < 0xfd) {
 			uint8_t val = work->gbt_txns;
@@ -2799,8 +2799,8 @@ static bool submit_upstream_work(struct work *work, CURL *curl, bool resubmit)
 
 			snprintf(worktime, sizeof(worktime),
 				" <-%08lx.%08lx M:%c D:%1.*f G:%02d:%02d:%02d:%1.3f %s (%1.3f) W:%1.3f (%1.3f) S:%1.3f R:%02d:%02d:%02d",
-				(unsigned long)be32toh(*(uint32_t *)&(work->whole_block[32])),
-				(unsigned long)be32toh(*(uint32_t *)&(work->whole_block[28])),
+				0, //(unsigned long)be32toh(*(uint32_t *)&(work->whole_block[32])),
+				0, //(unsigned long)be32toh(*(uint32_t *)&(work->whole_block[28])),
 				work->getwork_mode, diffplaces, work->work_difficulty,
 				tm_getwork.tm_hour, tm_getwork.tm_min,
 				tm_getwork.tm_sec, getwork_time, workclone,
@@ -3366,7 +3366,7 @@ static void roll_work(struct work *work)
 	uint64_t *work_ntime;
 	uint64_t ntime;
 
-	work_ntime = &work->header.nTime;
+	work_ntime = &work->data.header.nTime;
 	ntime = le64toh(*work_ntime);
 	ntime++;
 	*work_ntime = htole64(ntime);
@@ -3545,7 +3545,7 @@ static void _copy_work(struct work *work, const struct work *base_work, int noff
 		/* If we are passed an noffset the binary work->data ntime and
 		 * the work->ntime hex string need to be adjusted. */
 		if (noffset) {
-			uint64_t *work_ntime = &work->header.nTime;
+			uint64_t *work_ntime = &work->data.header.nTime;
 			uint64_t ntime = le64toh(*work_ntime);
 
 			ntime += noffset;
@@ -3554,7 +3554,7 @@ static void _copy_work(struct work *work, const struct work *base_work, int noff
 		} else
 			work->ntime = strdup(base_work->ntime);
 	} else if (noffset) {
-		uint64_t *work_ntime = &work->header.nTime;
+		uint64_t *work_ntime = &work->data.header.nTime;
 		uint64_t ntime = le64toh(*work_ntime);
 
 		ntime += noffset;
@@ -3566,7 +3566,7 @@ static void _copy_work(struct work *work, const struct work *base_work, int noff
 
 void set_work_ntime(struct work *work, int ntime)
 {
-	uint64_t *work_ntime = &work->header.nTime;
+	uint64_t *work_ntime = &work->data.header.nTime;
 
 	*work_ntime = htole64(ntime);
 	if (work->ntime) {
@@ -3978,7 +3978,7 @@ static bool block_exists(char *hexstr)
 /* Tests if this work is from a block that has been seen before */
 static inline bool from_existing_block(struct work *work)
 {
-	char *hexstr = bin2hex(work->whole_block + 8, 18);
+	char *hexstr = bin2hex((uint8_t*)&work->data.header + 8, 18);
 	bool ret;
 
 	ret = block_exists(hexstr);
@@ -4013,7 +4013,7 @@ static bool test_work_current(struct work *work)
 	if (work->mandatory)
 		return ret;
 
-	swap256(bedata, &work->header.hashPrevBlock);
+	swap256(bedata, &work->data.header.hashPrevBlock);
 	__bin2hex(hexstr, bedata, 32);
 
 	/* Search to see if this block exists yet and if not, consider it a
@@ -5568,7 +5568,7 @@ static void *stratum_sthread(void *userdata)
 		sshare->sshare_time = time(NULL);
 		/* This work item is freed in parse_stratum_response */
 		sshare->work = work;
-		nonce = work->header.nNonce;
+		nonce = work->data.header.nNonce;
 		__bin2hex(noncehex, (const unsigned char *)&nonce, 4);
 		memset(s, 0, 1024);
 
@@ -6056,7 +6056,7 @@ static void gen_stratum_work(struct pool *pool, struct work *work)
 	if (opt_debug) {
 		char *header, *merkle_hash;
 
-		header = bin2hex(work->whole_block, 185);
+		header = bin2hex((uint8_t*)&work->data.header, 185);
 		merkle_hash = bin2hex((const unsigned char *)merkle_root, 32);
 		applog(LOG_DEBUG, "Generated stratum merkle %s", merkle_hash);
 		applog(LOG_DEBUG, "Generated stratum header %s", header);
@@ -6175,7 +6175,7 @@ void inc_hw_errors(struct thr_info *thr)
 /* Fills in the work nonce and builds the output data in work->hash */
 static void rebuild_nonce(struct work *work, uint32_t nonce)
 {
-	uint32_t *work_nonce = &work->header.nNonce;
+	uint32_t *work_nonce = &work->data.header.nNonce;
 
 	*work_nonce = htole32(nonce);
 

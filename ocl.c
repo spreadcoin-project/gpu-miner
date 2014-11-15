@@ -979,7 +979,7 @@ built:
 		}
 	}
 
-	clState->CLbuffer0 = clCreateBuffer(clState->context, CL_MEM_READ_ONLY, 200000, NULL, &status);
+	clState->CLbuffer0 = clCreateBuffer(clState->context, CL_MEM_READ_ONLY, sizeof(struct data), NULL, &status);
 	if (status != CL_SUCCESS) {
 		applog(LOG_ERR, "Error %d: clCreateBuffer (CLbuffer0)", status);
 		return NULL;
