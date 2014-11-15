@@ -1878,7 +1878,7 @@ static int64_t opencl_scanhash(struct thr_info *thr, struct work *work,
 		clFinish(clState->commandQueue);
 	}
 
-	return hashes;
+	return hashes*64;
 }
 
 static void opencl_thread_shutdown(struct thr_info *thr)

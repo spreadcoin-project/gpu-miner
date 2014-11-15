@@ -156,6 +156,11 @@ __kernel void search(__global unsigned char* block, volatile __global uint* outp
     signbe[3] = SWAP8((signature[3] << 8) | signature8[3]);
     signbe[4] = (signature8[4] << 56) | 0x80000000000000;
 
+    int oldgid = gid;
+
+    for (int noncei2 = 0; noncei2 < 64; noncei2++)
+    {
+        gid = oldgid*64 + noncei2;
 
     // blake
 {
@@ -784,6 +789,8 @@ __kernel void search(__global unsigned char* block, volatile __global uint* outp
     bool result = (Vb11 <= target);
     if (result)
         output[output[0xFF]++] = gid;
+
+    } // for (int iteration = 0; iteration < 64; iteration++)
 }
 
 #endif // DARKCOIN_CL
