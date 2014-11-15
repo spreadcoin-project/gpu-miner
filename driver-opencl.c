@@ -1217,6 +1217,7 @@ static cl_int queue_sph_kernel(_clState *clState, dev_blk_ctx *blk, __maybe_unus
 
 	le_target = le64toh(*(uint64_t *)(blk->work->target + 24));//*(cl_ulong *)(blk->work->device_target + 24);
 
+    // FIXME: move in more appropriate place
 	prepare_work(blk->work);
 
 //	flip80(clState->cldata, blk->work->data);

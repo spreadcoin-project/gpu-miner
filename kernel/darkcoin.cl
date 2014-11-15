@@ -93,11 +93,15 @@ typedef long sph_s64;
 
 #if SPH_BIG_ENDIAN
     #define DEC64E(x) (x)
-    #define DEC64BE(x) (*(const __global sph_u64 *) (x));
+    #define DEC64BE(x) (*(const __global sph_u64 *) (x))
+    #define DEC64LE(x) SWAP8(*(const __global sph_u64 *) (x))
 #else
     #define DEC64E(x) SWAP8(x)
-    #define DEC64BE(x) SWAP8(*(const __global sph_u64 *) (x));
+    #define DEC64BE(x) SWAP8(*(const __global sph_u64 *) (x))
+    #define DEC64LE(x) (*(const __global sph_u64 *) (x))
 #endif
+
+typedef sph_u64 uint64_t;
 
 __attribute__((reqd_work_group_size(WORKSIZE, 1, 1)))
 __kernel void search(__global unsigned char* block, volatile __global uint* output, const ulong target)
@@ -120,6 +124,38 @@ __kernel void search(__global unsigned char* block, volatile __global uint* outp
         AES3[i] = AES3_C[i];
     }
     barrier(CLK_LOCAL_MEM_FENCE);
+
+    uint64_t hashWholeBlock[4];
+    hashWholeBlock[0] = DEC64BE(block +  88);
+    hashWholeBlock[1] = DEC64BE(block +  96);
+    hashWholeBlock[2] = DEC64BE(block + 104);
+    hashWholeBlock[3] = DEC64BE(block + 112);
+
+    uint64_t signature8[5];
+    signature8[0] = block[152];
+    signature8[1] = block[160];
+    signature8[2] = block[168];
+    signature8[3] = block[176];
+    signature8[4] = block[184];
+
+    uint64_t signature[4];
+    signature[0] = (DEC64LE(block + 152) >> 8) | (signature8[1] << 56);
+    signature[1] = (DEC64LE(block + 160) >> 8) | (signature8[2] << 56);
+    signature[2] = (DEC64LE(block + 168) >> 8) | (signature8[3] << 56);
+    signature[3] = (DEC64LE(block + 176) >> 8) | (signature8[4] << 56);
+
+    signature8[1] = signature[0] >> 56;
+    signature8[2] = signature[1] >> 56;
+    signature8[3] = signature[2] >> 56;
+    signature8[4] = signature[3] >> 56;
+
+    uint64_t signbe[5];
+    signbe[0] = SWAP8((signature[0] << 8) | signature8[0]);
+    signbe[1] = SWAP8((signature[1] << 8) | signature8[1]);
+    signbe[2] = SWAP8((signature[2] << 8) | signature8[2]);
+    signbe[3] = SWAP8((signature[3] << 8) | signature8[3]);
+    signbe[4] = (signature8[4] << 56) | 0x80000000000000;
+
 
     // blake
 {
@@ -154,10 +190,10 @@ __kernel void search(__global unsigned char* block, volatile __global uint* outp
     MA = DEC64BE(block +  80);
     MA &= 0xFFFFFFFF00000000;
     MA ^= SWAP4(gid);
-    MB = DEC64BE(block +  88);
-    MC = DEC64BE(block +  96);
-    MD = DEC64BE(block + 104);
-    ME = DEC64BE(block + 112);
+    MB = hashWholeBlock[0];
+    MC = hashWholeBlock[1];
+    MD = hashWholeBlock[2];
+    ME = hashWholeBlock[3];
     MF = DEC64BE(block + 120);
 
     COMPRESS64;
@@ -168,11 +204,11 @@ __kernel void search(__global unsigned char* block, volatile __global uint* outp
     M0 = DEC64BE(block + 128);
     M1 = DEC64BE(block + 136);
     M2 = DEC64BE(block + 144);
-    M3 = DEC64BE(block + 152);
-    M4 = DEC64BE(block + 160);
-    M5 = DEC64BE(block + 168);
-    M6 = DEC64BE(block + 176);
-    M7 = (((sph_u64)block[184]) << 56) | 0x80000000000000;
+    M3 = signbe[0];
+    M4 = signbe[1];
+    M5 = signbe[2];
+    M6 = signbe[3];
+    M7 = signbe[4];//(((sph_u64)block[184]) << 56) | 0x80000000000000;
     M8 = 0;
     M9 = 0;
     MA = 0;
