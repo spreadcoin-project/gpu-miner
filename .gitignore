@@ -1,0 +1,9 @@
+/.deps/*
+*.o
+*.Po
+*.la
+*.lo
+*.dll
+*.exe
+*.a
+*.bat
