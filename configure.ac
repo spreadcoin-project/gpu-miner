@@ -69,6 +69,8 @@ MM_LIBS=""
 MATH_LIBS="-lm"
 RT_LIBS="-lrt"
 
+CFLAGS="$CFLAGS -std=gnu99"
+	
 case $target in
   amd64-*)
     have_x86_64=true

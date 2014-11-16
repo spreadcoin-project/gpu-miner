@@ -14,10 +14,12 @@
 
 // Type names definition.
 // NOTE: long is always 64-bit in OpenCL, and long long is 128 bit.
+#ifdef _OPENCL_COMPILER
 typedef unsigned char  uint8_t;
 typedef unsigned short uint16_t;
 typedef unsigned int   uint32_t;
 typedef unsigned long  uint64_t;
+#endif
 
 // Start documenting AMD OpenCL bugs.
 #if amd_vliw5(DEVICE_INFO)

@@ -1211,10 +1211,9 @@ void prepare_work(struct work* work)
 
     uint32_t* pi32 = (uint32_t*)pStart;
     pi32[200000/4] = 128;
-    pi32[200000/4 + 15] = 200000*8;
+    pi32[200000/4 + 15] = bswap_32(200000*8);
 
-    int i;
-    for (i = 0; i < 200000/4 + 16; i++)
+    for (int i = 0; i < 200000/4 + 16; i++)
         pi32[i] = bswap_32(pi32[i]);
 }
 

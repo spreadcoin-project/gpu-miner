@@ -104,20 +104,10 @@ typedef long sph_s64;
     #define DEC64LE(x) (*(const __global sph_u64 *) (x))
 #endif
 
-//SHA256 constants.
-#define SH0      0x6a09e667U
-#define SH1      0xbb67ae85U
-#define SH2      0x3c6ef372U
-#define SH3      0xa54ff53aU
-#define SH4      0x510e527fU
-#define SH5      0x9b05688cU
-#define SH6      0x1f83d9abU
-#define SH7      0x5be0cd19U
 
 __attribute__((reqd_work_group_size(WORKSIZE, 1, 1)))
 __kernel void search(__global const unsigned char* block, volatile __global uint* output, const ulong target)
 {
-    uint gid = get_global_id(0);
     union {
         unsigned char h1[64];
         uint h4[16];
@@ -177,10 +167,20 @@ __kernel void search(__global const unsigned char* block, volatile __global uint
     uint32_t h = SH7;
     uint32_t t;
 
-    int oldgid = gid;
+    uint32_t high_nonce = get_global_id(0)*64;
 
     __global const uint32_t* pPokData = (__global const uint32_t*)(block + 192);
-    for (int i = 0; i < 3126; i++)
+
+    {
+        uint32_t w[16];
+        w[0] = SWAP4(high_nonce);
+        #pragma unroll
+        for (int j = 1; j < 16; j++)
+            w[j] = pPokData[j];
+        SHA256()
+    }
+
+    for (int i = 1; i < 3126; i++)
     {
         uint32_t w[16];
         #pragma unroll
@@ -194,9 +194,9 @@ __kernel void search(__global const unsigned char* block, volatile __global uint
     hashWholeBlock[2] = (((uint64_t)e) << 32) | f;
     hashWholeBlock[3] = (((uint64_t)g) << 32) | h;
 
-    for (int noncei2 = 0; noncei2 < 64; noncei2++)
+    for (uint32_t low_nonce = 0; low_nonce < 64; low_nonce++)
     {
-        gid = oldgid*64 + noncei2;
+        uint32_t nonce = high_nonce + low_nonce;
 
     // blake
 {
@@ -230,7 +230,7 @@ __kernel void search(__global const unsigned char* block, volatile __global uint
     M9 = DEC64BE(block +  72);
     MA = DEC64BE(block +  80);
     MA &= 0xFFFFFFFF00000000;
-    MA ^= SWAP4(gid);
+    MA ^= SWAP4(nonce);
     MB = hashWholeBlock[0];
     MC = hashWholeBlock[1];
     MD = hashWholeBlock[2];
@@ -824,7 +824,7 @@ __kernel void search(__global const unsigned char* block, volatile __global uint
 
     bool result = (Vb11 <= target);
     if (result)
-        output[output[0xFF]++] = gid;
+        output[output[0xFF]++] = nonce;
 
     } // for (int iteration = 0; iteration < 64; iteration++)
 }

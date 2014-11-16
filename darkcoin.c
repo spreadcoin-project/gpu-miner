@@ -46,6 +46,7 @@
 #include "sph/sph_shavite.h"
 #include "sph/sph_simd.h"
 #include "sph/sph_echo.h"
+#include "sha2.h"
 
 /* Move init out of loop, so init once externally, and then use one single memcpy with that bigger memory block */
 typedef struct {
@@ -94,7 +95,7 @@ be32enc_vect(uint32_t *dst, const uint32_t *src, uint32_t len)
 }
 
 
-inline void xhash(void *state, const void *input)
+void xhash(void *state, const void *input)
 {
     init_Xhash_contexts();
 
@@ -138,10 +139,169 @@ inline void xhash(void *state, const void *input)
     sph_echo512_close(&ctx.echo1, hashA);
 
     memcpy(state, hashA, 32);
-
 }
+
+#include "kernel/opencl_rawsha256.cl"
+
+uint32_t k[] = {
+    0x428a2f98U, 0x71374491U, 0xb5c0fbcfU, 0xe9b5dba5U,
+    0x3956c25bU, 0x59f111f1U, 0x923f82a4U, 0xab1c5ed5U,
+    0xd807aa98U, 0x12835b01U, 0x243185beU, 0x550c7dc3U,
+    0x72be5d74U, 0x80deb1feU, 0x9bdc06a7U, 0xc19bf174U,
+    0xe49b69c1U, 0xefbe4786U, 0x0fc19dc6U, 0x240ca1ccU,
+    0x2de92c6fU, 0x4a7484aaU, 0x5cb0a9dcU, 0x76f988daU,
+    0x983e5152U, 0xa831c66dU, 0xb00327c8U, 0xbf597fc7U,
+    0xc6e00bf3U, 0xd5a79147U, 0x06ca6351U, 0x14292967U,
+    0x27b70a85U, 0x2e1b2138U, 0x4d2c6dfcU, 0x53380d13U,
+    0x650a7354U, 0x766a0abbU, 0x81c2c92eU, 0x92722c85U,
+    0xa2bfe8a1U, 0xa81a664bU, 0xc24b8b70U, 0xc76c51a3U,
+    0xd192e819U, 0xd6990624U, 0xf40e3585U, 0x106aa070U,
+    0x19a4c116U, 0x1e376c08U, 0x2748774cU, 0x34b0bcb5U,
+    0x391c0cb3U, 0x4ed8aa4aU, 0x5b9cca4fU, 0x682e6ff3U,
+    0x748f82eeU, 0x78a5636fU, 0x84c87814U, 0x8cc70208U,
+    0x90befffaU, 0xa4506cebU, 0xbef9a3f7U, 0xc67178f2U
+};
 
 void darkcoin_regenhash(struct work *work)
 {
+    uint32_t* pi32 = (const uint32_t*)&work->data.pok_header;
+
+    for (int i = 0; i < 200000/4 + 16; i++)
+        pi32[i] = bswap_32(pi32[i]);
+
+    work->data.pok_header.nNonce = work->data.header.nNonce & ~0x3F;
+    memcpy(work->data.pok_header.MinerSignature, work->data.header.MinerSignature, 65);
+
+    sha256(&work->data.pok_header, 200000, work->data.header.hashWholeBlock);
+
+    for (int i = 0; i < 200000/4 + 16; i++)
+        pi32[i] = bswap_32(pi32[i]);
+
+    uint32_t a = SH0;
+    uint32_t b = SH1;
+    uint32_t c = SH2;
+    uint32_t d = SH3;
+    uint32_t e = SH4;
+    uint32_t f = SH5;
+    uint32_t g = SH6;
+    uint32_t h = SH7;
+    uint32_t t, t1, t2;
+
+    uint32_t hash[8] = {SH0, SH1, SH2, SH3, SH4, SH5, SH6, SH7};
+
+    uint32_t high_nonce = work->data.header.nNonce & ~0x3F;
+
+    const uint32_t* pPokData = (const uint32_t*)&work->data.pok_header;
+
+    {
+        uint32_t w[16];
+        w[0] = bswap_32(high_nonce);
+        int j;
+        for (j = 1; j < 16; j++)
+            w[j] = (pPokData[j]);
+        SHA256()
+
+     /* 	#pragma unroll
+        for (int i = 0; i < 16; i++) {
+            t1 = k[i] + w[i] + h + Sigma1(e) + Ch(e, f, g);
+            t2 = Maj(a, b, c) + Sigma0(a);
+            h = g;
+            g = f;
+            f = e;
+            e = d + t1;
+            d = c;
+            c = b;
+            b = a;
+            a = t1 + t2;
+        }
+        #pragma unroll
+        for (int i = 16; i < 64; i++) {
+            w[i & 15] = sigma1(w[(i - 2) & 15]) + sigma0(w[(i - 15) & 15]) + w[(i - 16) & 15] + w[(i - 7) & 15];
+            t1 = k[i] + w[i & 15] + h + Sigma1(e) + Ch(e, f, g);
+            t2 = Maj(a, b, c) + Sigma0(a);
+            h = g;
+            g = f;
+            f = e;
+            e = d + t1;
+            d = c;
+            c = b;
+            b = a;
+            a = t1 + t2;
+        }*/
+
+        hash[0] += a;
+        hash[1] += b;
+        hash[2] += c;
+        hash[3] += d;
+        hash[4] += e;
+        hash[5] += f;
+        hash[6] += g;
+        hash[7] += h;
+    }
+
+    int i;
+    for (i = 1; i < 3126; i++)
+    {
+        a = hash[0];
+        b = hash[1];
+        c = hash[2];
+        d = hash[3];
+        e = hash[4];
+        f = hash[5];
+        g = hash[6];
+        h = hash[7];
+        uint32_t w[16];
+        int j;
+        for (j = 0; j < 16; j++)
+            w[j] = (pPokData[i*16 + j]);
+        SHA256()
+
+     /*	#pragma unroll
+        for (int i = 0; i < 16; i++) {
+            t1 = k[i] + w[i] + h + Sigma1(e) + Ch(e, f, g);
+            t2 = Maj(a, b, c) + Sigma0(a);
+            h = g;
+            g = f;
+            f = e;
+            e = d + t1;
+            d = c;
+            c = b;
+            b = a;
+            a = t1 + t2;
+        }
+        #pragma unroll
+        for (int i = 16; i < 64; i++) {
+            w[i & 15] = sigma1(w[(i - 2) & 15]) + sigma0(w[(i - 15) & 15]) + w[(i - 16) & 15] + w[(i - 7) & 15];
+            t1 = k[i] + w[i & 15] + h + Sigma1(e) + Ch(e, f, g);
+            t2 = Maj(a, b, c) + Sigma0(a);
+            h = g;
+            g = f;
+            f = e;
+            e = d + t1;
+            d = c;
+            c = b;
+            b = a;
+            a = t1 + t2;
+        }*/
+
+        hash[0] += a;
+        hash[1] += b;
+        hash[2] += c;
+        hash[3] += d;
+        hash[4] += e;
+        hash[5] += f;
+        hash[6] += g;
+        hash[7] += h;
+    }
+
+    uint64_t hashWholeBlock[4];
+    hashWholeBlock[0] = (((uint64_t)hash[0]) << 32) | hash[1];
+    hashWholeBlock[1] = (((uint64_t)hash[2]) << 32) | hash[3];
+    hashWholeBlock[2] = (((uint64_t)hash[4]) << 32) | hash[5];
+    hashWholeBlock[3] = (((uint64_t)hash[6]) << 32) | hash[7];
+
+
+
+
     xhash(work->hash, &work->data.header);
 }
