@@ -1206,6 +1206,16 @@ void prepare_work(struct work* work)
 
     for (pI = pFillFooter - 1; pI >= pFillBegin; pI--)
         pI[0] = pI[3]*pI[7];
+
+    memset(pStart + 200000, 0, 512/8);
+
+    uint32_t* pi32 = (uint32_t*)pStart;
+    pi32[200000/4] = 128;
+    pi32[200000/4 + 15] = 200000*8;
+
+    int i;
+    for (i = 0; i < 200000/4 + 16; i++)
+        pi32[i] = bswap_32(pi32[i]);
 }
 
 static cl_int queue_sph_kernel(_clState *clState, dev_blk_ctx *blk, __maybe_unused cl_uint threads)

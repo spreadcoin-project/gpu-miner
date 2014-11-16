@@ -88,6 +88,9 @@ typedef long sph_s64;
 #include "simd.cl"
 #include "echo.cl"
 
+#define _OPENCL_COMPILER
+#include "opencl_rawsha256.cl"
+
 #define SWAP4(x) as_uint(as_uchar4(x).wzyx)
 #define SWAP8(x) as_ulong(as_uchar8(x).s76543210)
 
@@ -101,10 +104,18 @@ typedef long sph_s64;
     #define DEC64LE(x) (*(const __global sph_u64 *) (x))
 #endif
 
-typedef sph_u64 uint64_t;
+//SHA256 constants.
+#define SH0      0x6a09e667U
+#define SH1      0xbb67ae85U
+#define SH2      0x3c6ef372U
+#define SH3      0xa54ff53aU
+#define SH4      0x510e527fU
+#define SH5      0x9b05688cU
+#define SH6      0x1f83d9abU
+#define SH7      0x5be0cd19U
 
 __attribute__((reqd_work_group_size(WORKSIZE, 1, 1)))
-__kernel void search(__global unsigned char* block, volatile __global uint* output, const ulong target)
+__kernel void search(__global const unsigned char* block, volatile __global uint* output, const ulong target)
 {
     uint gid = get_global_id(0);
     union {
@@ -156,7 +167,32 @@ __kernel void search(__global unsigned char* block, volatile __global uint* outp
     signbe[3] = SWAP8((signature[3] << 8) | signature8[3]);
     signbe[4] = (signature8[4] << 56) | 0x80000000000000;
 
+    uint32_t a = SH0;
+    uint32_t b = SH1;
+    uint32_t c = SH2;
+    uint32_t d = SH3;
+    uint32_t e = SH4;
+    uint32_t f = SH5;
+    uint32_t g = SH6;
+    uint32_t h = SH7;
+    uint32_t t;
+
     int oldgid = gid;
+
+    __global const uint32_t* pPokData = (__global const uint32_t*)(block + 192);
+    for (int i = 0; i < 3126; i++)
+    {
+        uint32_t w[16];
+        #pragma unroll
+        for (int j = 0; j < 16; j++)
+            w[j] = pPokData[i*16 + j];
+        SHA256()
+    }
+
+    hashWholeBlock[0] = (((uint64_t)a) << 32) | b;
+    hashWholeBlock[1] = (((uint64_t)c) << 32) | d;
+    hashWholeBlock[2] = (((uint64_t)e) << 32) | f;
+    hashWholeBlock[3] = (((uint64_t)g) << 32) | h;
 
     for (int noncei2 = 0; noncei2 < 64; noncei2++)
     {

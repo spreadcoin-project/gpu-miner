@@ -1358,7 +1358,7 @@ struct data
     struct CBlockHeader header;
     uint8_t padding[7];
     struct CPokHeader pok_header;
-    uint8_t txs[200000];
+    uint8_t txs[200000 + 1000];
 } data;
 #pragma pack(pop)
 
