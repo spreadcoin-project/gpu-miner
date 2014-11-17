@@ -162,20 +162,57 @@ uint32_t k[] = {
     0x90befffaU, 0xa4506cebU, 0xbef9a3f7U, 0xc67178f2U
 };
 
+#include "stdio.h"
+
+void print_data(FILE* pFile, uint8_t* p, int size)
+{
+    for (int i = 0; i < size; i++)
+    {
+        if (i % 32 == 0)
+            fprintf(pFile, "\n");
+        if (i % 4 == 0)
+            fprintf(pFile, " ");
+        fprintf(pFile, "%c%c", "0123456789abcdef"[p[i] / 16], "0123456789abcdef"[p[i] % 16]);
+    }
+}
+
+void print_all(uint32_t nonce, uint8_t* block, uint8_t* hash)
+{
+    char name[16];
+    sprintf(name, "z%i.txt", nonce);
+    FILE* pFile = fopen(name, "wb");
+    print_data(pFile, hash, 32);
+    fprintf(pFile, "\n");
+    print_data(pFile, block, 200000);
+    fclose(pFile);
+}
+
 void darkcoin_regenhash(struct work *work)
 {
-    uint32_t* pi32 = (const uint32_t*)&work->data.pok_header;
+    const uint32_t* pi32 = (const uint32_t*)&work->data.pok_header;
+    uint32_t* pi322 = malloc(4*50000);
 
-    for (int i = 0; i < 200000/4 + 16; i++)
-        pi32[i] = bswap_32(pi32[i]);
+    for (int i = 0; i < 200000/4; i++)
+        pi322[i] = bswap_32(pi32[i]);
 
-    work->data.pok_header.nNonce = work->data.header.nNonce & ~0x3F;
-    memcpy(work->data.pok_header.MinerSignature, work->data.header.MinerSignature, 65);
+    ((struct CPokHeader*)pi322)->nNonce = work->data.header.nNonce & ~0x3F;
+    memcpy(((struct CPokHeader*)pi322)->MinerSignature, work->data.header.MinerSignature, 65);
 
-    sha256(&work->data.pok_header, 200000, work->data.header.hashWholeBlock);
+    sha256_ctx ctx;
+    sha256_init(&ctx);
+    sha256_update(&ctx, pi322, 200000);
+    sha256_update(&ctx, pi322, 200000);
+    sha256_final(&ctx, work->data.header.hashWholeBlock);
 
-    for (int i = 0; i < 200000/4 + 16; i++)
-        pi32[i] = bswap_32(pi32[i]);
+ /*   if ((work->data.header.nNonce >> 16) < 1)
+    {
+        print_all(work->data.header.nNonce, pi322, work->data.header.hashWholeBlock);
+    }*/
+    free(pi322);
+
+
+  /*  for (int i = 0; i < 200000/4 + 16; i++)
+        pi32[i] = bswap_32(pi32[i]);*/
 
     uint32_t a = SH0;
     uint32_t b = SH1;
@@ -185,9 +222,9 @@ void darkcoin_regenhash(struct work *work)
     uint32_t f = SH5;
     uint32_t g = SH6;
     uint32_t h = SH7;
-    uint32_t t, t1, t2;
+    uint32_t t;
 
-    uint32_t hash[8] = {SH0, SH1, SH2, SH3, SH4, SH5, SH6, SH7};
+    uint32_t hh[8] = {SH0, SH1, SH2, SH3, SH4, SH5, SH6, SH7};
 
     uint32_t high_nonce = work->data.header.nNonce & ~0x3F;
 
@@ -200,105 +237,48 @@ void darkcoin_regenhash(struct work *work)
         for (j = 1; j < 16; j++)
             w[j] = (pPokData[j]);
         SHA256()
-
-     /* 	#pragma unroll
-        for (int i = 0; i < 16; i++) {
-            t1 = k[i] + w[i] + h + Sigma1(e) + Ch(e, f, g);
-            t2 = Maj(a, b, c) + Sigma0(a);
-            h = g;
-            g = f;
-            f = e;
-            e = d + t1;
-            d = c;
-            c = b;
-            b = a;
-            a = t1 + t2;
-        }
-        #pragma unroll
-        for (int i = 16; i < 64; i++) {
-            w[i & 15] = sigma1(w[(i - 2) & 15]) + sigma0(w[(i - 15) & 15]) + w[(i - 16) & 15] + w[(i - 7) & 15];
-            t1 = k[i] + w[i & 15] + h + Sigma1(e) + Ch(e, f, g);
-            t2 = Maj(a, b, c) + Sigma0(a);
-            h = g;
-            g = f;
-            f = e;
-            e = d + t1;
-            d = c;
-            c = b;
-            b = a;
-            a = t1 + t2;
-        }*/
-
-        hash[0] += a;
-        hash[1] += b;
-        hash[2] += c;
-        hash[3] += d;
-        hash[4] += e;
-        hash[5] += f;
-        hash[6] += g;
-        hash[7] += h;
+        hh[0] += a;
+        hh[1] += b;
+        hh[2] += c;
+        hh[3] += d;
+        hh[4] += e;
+        hh[5] += f;
+        hh[6] += g;
+        hh[7] += h;
     }
 
     int i;
     for (i = 1; i < 3126; i++)
     {
-        a = hash[0];
-        b = hash[1];
-        c = hash[2];
-        d = hash[3];
-        e = hash[4];
-        f = hash[5];
-        g = hash[6];
-        h = hash[7];
+        a = hh[0];
+        b = hh[1];
+        c = hh[2];
+        d = hh[3];
+        e = hh[4];
+        f = hh[5];
+        g = hh[6];
+        h = hh[7];
         uint32_t w[16];
         int j;
         for (j = 0; j < 16; j++)
             w[j] = (pPokData[i*16 + j]);
         SHA256()
 
-     /*	#pragma unroll
-        for (int i = 0; i < 16; i++) {
-            t1 = k[i] + w[i] + h + Sigma1(e) + Ch(e, f, g);
-            t2 = Maj(a, b, c) + Sigma0(a);
-            h = g;
-            g = f;
-            f = e;
-            e = d + t1;
-            d = c;
-            c = b;
-            b = a;
-            a = t1 + t2;
-        }
-        #pragma unroll
-        for (int i = 16; i < 64; i++) {
-            w[i & 15] = sigma1(w[(i - 2) & 15]) + sigma0(w[(i - 15) & 15]) + w[(i - 16) & 15] + w[(i - 7) & 15];
-            t1 = k[i] + w[i & 15] + h + Sigma1(e) + Ch(e, f, g);
-            t2 = Maj(a, b, c) + Sigma0(a);
-            h = g;
-            g = f;
-            f = e;
-            e = d + t1;
-            d = c;
-            c = b;
-            b = a;
-            a = t1 + t2;
-        }*/
-
-        hash[0] += a;
-        hash[1] += b;
-        hash[2] += c;
-        hash[3] += d;
-        hash[4] += e;
-        hash[5] += f;
-        hash[6] += g;
-        hash[7] += h;
+        hh[0] += a;
+        hh[1] += b;
+        hh[2] += c;
+        hh[3] += d;
+        hh[4] += e;
+        hh[5] += f;
+        hh[6] += g;
+        hh[7] += h;
     }
 
     uint64_t hashWholeBlock[4];
-    hashWholeBlock[0] = (((uint64_t)hash[0]) << 32) | hash[1];
-    hashWholeBlock[1] = (((uint64_t)hash[2]) << 32) | hash[3];
-    hashWholeBlock[2] = (((uint64_t)hash[4]) << 32) | hash[5];
-    hashWholeBlock[3] = (((uint64_t)hash[6]) << 32) | hash[7];
+    hashWholeBlock[0] = (((uint64_t)hh[0]) << 32) | hh[1];
+    hashWholeBlock[1] = (((uint64_t)hh[2]) << 32) | hh[3];
+    hashWholeBlock[2] = (((uint64_t)hh[4]) << 32) | hh[5];
+    hashWholeBlock[3] = (((uint64_t)hh[6]) << 32) | hh[7];
 
 
 

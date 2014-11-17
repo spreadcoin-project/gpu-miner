@@ -1370,6 +1370,7 @@ struct work {
 	uint8_t	target[32];
 	uint8_t hash[32];
 	int txslen;
+	bool prepared;
 
 	unsigned char	device_target[32];
 	double		device_diff;

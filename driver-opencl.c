@@ -1178,6 +1178,10 @@ void manage_gpu(void)
 
 void prepare_work(struct work* work)
 {
+    if (work->prepared)
+        return true;
+    work->prepared = true;
+
     work->data.pok_header.nNonce = work->data.header.nNonce;
     work->data.pok_header.nTime = work->data.header.nTime;
     work->data.pok_header.nVersion = work->data.header.nVersion;
@@ -1211,7 +1215,7 @@ void prepare_work(struct work* work)
 
     uint32_t* pi32 = (uint32_t*)pStart;
     pi32[200000/4] = 128;
-    pi32[200000/4 + 15] = bswap_32(200000*8);
+    pi32[200000/4 + 15] = bswap_32(2*200000*8);
 
     for (int i = 0; i < 200000/4 + 16; i++)
         pi32[i] = bswap_32(pi32[i]);

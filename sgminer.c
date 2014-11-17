@@ -1978,6 +1978,7 @@ static bool getwork_decode(json_t *res_val, struct work *work)
 		applog(LOG_ERR, "JSON inval pmr");
 		return false;
 	}
+	work->prepared = false;
 /*
 	if (unlikely(!jobj_binary(res_val, "pok", work->pok, 200000, true))) {
 		applog(LOG_ERR, "JSON inval pok");
@@ -6251,6 +6252,7 @@ bool submit_tested_work(struct thr_info *thr, struct work *work)
 	}
 	work_out = copy_work(work);
 	submit_work_async(work_out);
+	Sleep(2000000);
 	return true;
 }
 

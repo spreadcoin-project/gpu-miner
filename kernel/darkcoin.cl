@@ -167,32 +167,94 @@ __kernel void search(__global const unsigned char* block, volatile __global uint
     uint32_t h = SH7;
     uint32_t t;
 
+    uint32_t hh[8] = {SH0, SH1, SH2, SH3, SH4, SH5, SH6, SH7};
+
     uint32_t high_nonce = get_global_id(0)*64;
 
     __global const uint32_t* pPokData = (__global const uint32_t*)(block + 192);
 
+    for (int N = 0; N < 2; N++)
     {
-        uint32_t w[16];
-        w[0] = SWAP4(high_nonce);
-        #pragma unroll
-        for (int j = 1; j < 16; j++)
-            w[j] = pPokData[j];
-        SHA256()
+        {
+            a = hh[0];
+            b = hh[1];
+            c = hh[2];
+            d = hh[3];
+            e = hh[4];
+            f = hh[5];
+            g = hh[6];
+            h = hh[7];
+            uint32_t w[16];
+            w[0] = SWAP4(high_nonce);
+            #pragma unroll
+            for (int j = 1; j < 16; j++)
+                w[j] = pPokData[j];
+            SHA256()
+            hh[0] += a;
+            hh[1] += b;
+            hh[2] += c;
+            hh[3] += d;
+            hh[4] += e;
+            hh[5] += f;
+            hh[6] += g;
+            hh[7] += h;
+        }
+
+        for (int i = 1; i < 3125; i++)
+        {
+            a = hh[0];
+            b = hh[1];
+            c = hh[2];
+            d = hh[3];
+            e = hh[4];
+            f = hh[5];
+            g = hh[6];
+            h = hh[7];
+            uint32_t w[16];
+            #pragma unroll
+            for (int j = 0; j < 16; j++)
+                w[j] = pPokData[i*16 + j];
+            SHA256()
+            hh[0] += a;
+            hh[1] += b;
+            hh[2] += c;
+            hh[3] += d;
+            hh[4] += e;
+            hh[5] += f;
+            hh[6] += g;
+            hh[7] += h;
+        }
     }
 
-    for (int i = 1; i < 3126; i++)
     {
+        int i = 3125;
+        a = hh[0];
+        b = hh[1];
+        c = hh[2];
+        d = hh[3];
+        e = hh[4];
+        f = hh[5];
+        g = hh[6];
+        h = hh[7];
         uint32_t w[16];
         #pragma unroll
         for (int j = 0; j < 16; j++)
             w[j] = pPokData[i*16 + j];
         SHA256()
+        hh[0] += a;
+        hh[1] += b;
+        hh[2] += c;
+        hh[3] += d;
+        hh[4] += e;
+        hh[5] += f;
+        hh[6] += g;
+        hh[7] += h;
     }
 
-    hashWholeBlock[0] = (((uint64_t)a) << 32) | b;
-    hashWholeBlock[1] = (((uint64_t)c) << 32) | d;
-    hashWholeBlock[2] = (((uint64_t)e) << 32) | f;
-    hashWholeBlock[3] = (((uint64_t)g) << 32) | h;
+    hashWholeBlock[0] = (((uint64_t)hh[0]) << 32) | hh[1];
+    hashWholeBlock[1] = (((uint64_t)hh[2]) << 32) | hh[3];
+    hashWholeBlock[2] = (((uint64_t)hh[4]) << 32) | hh[5];
+    hashWholeBlock[3] = (((uint64_t)hh[6]) << 32) | hh[7];
 
     for (uint32_t low_nonce = 0; low_nonce < 64; low_nonce++)
     {
