@@ -187,6 +187,60 @@ void print_all(uint32_t nonce, uint8_t* block, uint8_t* hash)
     fclose(pFile);
 }
 
+static const uint32_t disorder[8] = {801750719, 1076732275, 1354194884, 1162945305, 1, 0, 0, 0};
+
+static void mul256(uint32_t c[16], const uint32_t a[8], const uint32_t b[8])
+{
+    uint64_t r = 0;
+    uint8_t carry = 0;
+    for (int i = 0; i < 8; i++)
+    {
+        r += c[i];
+        for (int j = 0; j < i + 1; j++)
+        {
+            uint64_t rold = r;
+            r += ((uint64_t)a[j])*b[i - j];
+            carry += rold > r;
+        }
+        c[i] = (uint32_t)(r & 0xFFFFFFFF);
+        r = (((uint64_t)carry) << 32) + (r >> 32);
+        carry = 0;
+    }
+    for (int i = 8; i < 15; i++)
+    {
+        r += c[i];
+        for (int j = i - 7; j < 8; j++)
+        {
+            uint64_t rold = r;
+            r += ((uint64_t)a[j])*b[i - j];
+            carry += rold > r;
+        }
+        c[i] = (uint32_t)(r & 0xFFFFFFFF);
+        r = (((uint64_t)carry) << 32) + (r >> 32);
+        carry = 0;
+    }
+    c[15] += r;
+}
+
+static void reduce(uint32_t r[16], uint32_t a[16])
+{
+    for (int i = 0; i < 8; i++)
+        r[i] = a[i];
+    for (int i = 8; i < 16; i++)
+        r[i] = 0;
+    mul256(r, a + 8, disorder);
+}
+
+static void reverse(uint8_t* p)
+{
+    for (int i = 0; i < 16; i++)
+    {
+        uint8_t t = p[i];
+        p[i] = p[31-i];
+        p[31-i] = t;
+    }
+}
+
 void darkcoin_regenhash(struct work *work)
 {
     const uint32_t* pi32 = (const uint32_t*)&work->data.pok_header;
@@ -195,15 +249,44 @@ void darkcoin_regenhash(struct work *work)
     for (int i = 0; i < 200000/4; i++)
         pi322[i] = bswap_32(pi32[i]);
 
-    ((struct CPokHeader*)pi322)->nNonce = work->data.header.nNonce & ~0x3F;
-    memcpy(((struct CPokHeader*)pi322)->MinerSignature, work->data.header.MinerSignature, 65);
+    uint32_t Hash0[8];
+    uint32_t Hash[8];
+    uint32_t Akinv[8];
+    uint32_t bufferA[16];
+    uint32_t bufferB[16];
+
+    uint32_t high_nonce = work->data.header.nNonce/64*64;
 
     sha256_ctx ctx;
     sha256_init(&ctx);
-    sha256_update(&ctx, pi322, 200000);
-    sha256_update(&ctx, pi322, 200000);
+    sha256_update(&ctx, (const uint8_t*)&work->data.header, 84);
+    sha256_update(&ctx, (const uint8_t*)&high_nonce, 4);
+    sha256_final(&ctx, (uint8_t*)Hash0);
+
+    sha256_init(&ctx);
+    sha256_update(&ctx, (const uint8_t*)Hash0, 32);
+    sha256_final(&ctx, (uint8_t*)Hash);
+
+    memcpy(bufferA, work->data.prk, 32);
+    memset(bufferA + 8, 0, 32);
+    reverse((uint8_t*)Hash);
+    mul256(bufferA, (const uint32_t*)work->data.kinv, Hash);
+    reduce(bufferB, bufferA);
+    reduce(bufferA, bufferB);
+    reduce(bufferB, bufferA);
+    reverse((uint8_t*)bufferB);
+
+    memcpy(&work->data.header.MinerSignature[33], bufferB, 32);
+
+    ((struct CPokHeader*)pi322)->nNonce = work->data.header.nNonce & ~0x3F;
+    memcpy(((struct CPokHeader*)pi322)->MinerSignature, work->data.header.MinerSignature, 65);
+
+    sha256_init(&ctx);
+    sha256_update(&ctx, (const uint8_t*)pi322, 200000);
+    sha256_update(&ctx, (const uint8_t*)pi322, 200000);
     sha256_final(&ctx, work->data.header.hashWholeBlock);
 
+#if 0
  /*   if ((work->data.header.nNonce >> 16) < 1)
     {
         print_all(work->data.header.nNonce, pi322, work->data.header.hashWholeBlock);
@@ -279,7 +362,7 @@ void darkcoin_regenhash(struct work *work)
     hashWholeBlock[1] = (((uint64_t)hh[2]) << 32) | hh[3];
     hashWholeBlock[2] = (((uint64_t)hh[4]) << 32) | hh[5];
     hashWholeBlock[3] = (((uint64_t)hh[6]) << 32) | hh[7];
-
+#endif
 
 
 

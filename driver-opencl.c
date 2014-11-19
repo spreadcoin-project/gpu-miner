@@ -1176,11 +1176,27 @@ void manage_gpu(void)
 #define CL_SET_VARG(args, var) status |= clSetKernelArg(*kernel, num++, args * sizeof(uint), (void *)var)
 #define CL_SET_ARG_N(n,var) status |= clSetKernelArg(*kernel, n, sizeof(var), (void *)&var)
 
+static void reverse(uint8_t* p)
+{
+    for (int i = 0; i < 16; i++)
+    {
+        uint8_t t = p[i];
+        p[i] = p[31-i];
+        p[31-i] = t;
+    }
+}
+
 void prepare_work(struct work* work)
 {
     if (work->prepared)
-        return true;
+        return;
     work->prepared = true;
+
+    for (int i = 0; i < 32; i++)
+        work->data.header.MinerSignature[33 + i] = i;
+
+    reverse(work->data.kinv);
+    reverse(work->data.prk);
 
     work->data.pok_header.nNonce = work->data.header.nNonce;
     work->data.pok_header.nTime = work->data.header.nTime;

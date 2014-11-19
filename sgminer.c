@@ -1969,21 +1969,16 @@ static bool getwork_decode(json_t *res_val, struct work *work)
 		return false;
 	}
 
-	if (unlikely(!jobj_binary(res_val, "kinv", work->kinv, sizeof(work->kinv), true))) {
+	if (unlikely(!jobj_binary(res_val, "kinv", work->data.kinv, sizeof(work->data.kinv), true))) {
 		applog(LOG_ERR, "JSON inval kinv");
 		return false;
 	}
 
-	if (unlikely(!jobj_binary(res_val, "pmr", work->pmr, sizeof(work->pmr), true))) {
-		applog(LOG_ERR, "JSON inval pmr");
+	if (unlikely(!jobj_binary(res_val, "prk", work->data.prk, sizeof(work->data.prk), true))) {
+		applog(LOG_ERR, "JSON inval prk");
 		return false;
 	}
 	work->prepared = false;
-/*
-	if (unlikely(!jobj_binary(res_val, "pok", work->pok, 200000, true))) {
-		applog(LOG_ERR, "JSON inval pok");
-		return false;
-	}*/
 
 	return true;
 }
@@ -6198,7 +6193,7 @@ bool test_nonce(struct work *work, uint32_t nonce)
 	rebuild_nonce(work, nonce);
 	diff1targ = 0x0000ffffUL;
 
-	return (le32toh(*hash_32) <= diff1targ);
+	return true; // (le32toh(*hash_32) <= diff1targ);
 }
 
 /* For testing a nonce against an arbitrary diff */

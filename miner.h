@@ -1355,6 +1355,8 @@ struct CPokHeader
 
 struct data
 {
+	uint8_t kinv[32];
+	uint8_t prk[32];
     struct CBlockHeader header;
     uint8_t padding[7];
     struct CPokHeader pok_header;
@@ -1365,8 +1367,6 @@ struct data
 struct work {
     struct data data;
  //   uint8_t pok[200000];
-	uint8_t kinv[32];
-	uint8_t pmr[32];
 	uint8_t	target[32];
 	uint8_t hash[32];
 	int txslen;

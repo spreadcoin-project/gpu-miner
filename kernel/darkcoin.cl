@@ -105,8 +105,52 @@ typedef long sph_s64;
 #endif
 
 
+static const uint32_t disorder[8] = {801750719, 1076732275, 1354194884, 1162945305, 1, 0, 0, 0};
+
+void mul256(uint32_t c[16], const uint32_t a[8], const uint32_t b[8])
+{
+    uint64_t r = 0;
+    uint8_t carry = 0;
+    for (int i = 0; i < 8; i++)
+    {
+        r += c[i];
+        for (int j = 0; j < i + 1; j++)
+        {
+            uint64_t rold = r;
+            r += ((uint64_t)a[j])*b[i - j];
+            carry += rold > r;
+        }
+        c[i] = (uint32_t)(r & 0xFFFFFFFF);
+        r = (((uint64_t)carry) << 32) + (r >> 32);
+        carry = 0;
+    }
+    for (int i = 8; i < 15; i++)
+    {
+        r += c[i];
+        for (int j = i - 7; j < 8; j++)
+        {
+            uint64_t rold = r;
+            r += ((uint64_t)a[j])*b[i - j];
+            carry += rold > r;
+        }
+        c[i] = (uint32_t)(r & 0xFFFFFFFF);
+        r = (((uint64_t)carry) << 32) + (r >> 32);
+        carry = 0;
+    }
+    c[15] += r;
+}
+
+void reduce(uint32_t r[16], uint32_t a[16])
+{
+    for (int i = 0; i < 8; i++)
+        r[i] = a[i];
+    for (int i = 8; i < 16; i++)
+        r[i] = 0;
+    mul256(r, a + 8, disorder);
+}
+
 __attribute__((reqd_work_group_size(WORKSIZE, 1, 1)))
-__kernel void search(__global const unsigned char* block, volatile __global uint* output, const ulong target)
+__kernel void search(__global const unsigned char* block2, volatile __global uint* output, const ulong target)
 {
     union {
         unsigned char h1[64];
@@ -126,11 +170,11 @@ __kernel void search(__global const unsigned char* block, volatile __global uint
     }
     barrier(CLK_LOCAL_MEM_FENCE);
 
-    uint64_t hashWholeBlock[4];
-    hashWholeBlock[0] = DEC64BE(block +  88);
-    hashWholeBlock[1] = DEC64BE(block +  96);
-    hashWholeBlock[2] = DEC64BE(block + 104);
-    hashWholeBlock[3] = DEC64BE(block + 112);
+    __global const unsigned char* block = block2 + 64;
+    __global const unsigned char* kinv = block2;
+    __global const unsigned char* prk = block2 + 32;
+
+    uint32_t high_nonce = get_global_id(0)*64;
 
     uint64_t signature8[5];
     signature8[0] = block[152];
@@ -144,6 +188,93 @@ __kernel void search(__global const unsigned char* block, volatile __global uint
     signature[1] = (DEC64LE(block + 160) >> 8) | (signature8[2] << 56);
     signature[2] = (DEC64LE(block + 168) >> 8) | (signature8[3] << 56);
     signature[3] = (DEC64LE(block + 176) >> 8) | (signature8[4] << 56);
+
+
+    {
+        uint32_t a = SH0;
+        uint32_t b = SH1;
+        uint32_t c = SH2;
+        uint32_t d = SH3;
+        uint32_t e = SH4;
+        uint32_t f = SH5;
+        uint32_t g = SH6;
+        uint32_t h = SH7;
+        uint32_t t;
+
+        uint32_t hh[8] = {SH0, SH1, SH2, SH3, SH4, SH5, SH6, SH7};
+
+        {
+            int i = 0;
+            a = hh[0];
+            b = hh[1];
+            c = hh[2];
+            d = hh[3];
+            e = hh[4];
+            f = hh[5];
+            g = hh[6];
+            h = hh[7];
+            uint32_t w[16];
+            #pragma unroll
+            for (int j = 0; j < 16; j++)
+                w[j] = block[i*16 + j];
+            SHA256()
+            hh[0] += a;
+            hh[1] += b;
+            hh[2] += c;
+            hh[3] += d;
+            hh[4] += e;
+            hh[5] += f;
+            hh[6] += g;
+            hh[7] += h;
+        }
+
+        {
+            int i = 2;
+            a = hh[0];
+            b = hh[1];
+            c = hh[2];
+            d = hh[3];
+            e = hh[4];
+            f = hh[5];
+            g = hh[6];
+            h = hh[7];
+            uint32_t w[16];
+            #pragma unroll
+            for (int j = 0; j < 5; j++)
+                w[j] = block[i*16 + j];
+            w[6] = SWAP4(high_nonce);
+            w[7] = 0x80000000;
+            for (int j = 8; j < 15; j++)
+                w[j] = 0;
+            w[15] = 704;
+            SHA256()
+            hh[0] += a;
+            hh[1] += b;
+            hh[2] += c;
+            hh[3] += d;
+            hh[4] += e;
+            hh[5] += f;
+            hh[6] += g;
+            hh[7] += h;
+        }
+
+        uint32_t bufferA[16];
+        uint32_t bufferB[16];
+        for (int i = 0; i < 8; i++)
+            bufferA[i] = prk[i];
+        for (int i = 8; i < 16; i++)
+            bufferA[i] = 0;
+
+        mul256(bufferA, (__global const uint32_t*)kinv, hh);
+        reduce(bufferB, bufferA);
+        reduce(bufferA, bufferB);
+        reduce(bufferB, bufferA);
+
+        signature[0] = (((uint64_t)bufferB[0]) << 32) | bufferB[1];
+        signature[1] = (((uint64_t)bufferB[2]) << 32) | bufferB[3];
+        signature[2] = (((uint64_t)bufferB[4]) << 32) | bufferB[5];
+        signature[3] = (((uint64_t)bufferB[6]) << 32) | bufferB[7];
+    }
 
     signature8[1] = signature[0] >> 56;
     signature8[2] = signature[1] >> 56;
@@ -169,9 +300,16 @@ __kernel void search(__global const unsigned char* block, volatile __global uint
 
     uint32_t hh[8] = {SH0, SH1, SH2, SH3, SH4, SH5, SH6, SH7};
 
-    uint32_t high_nonce = get_global_id(0)*64;
-
     __global const uint32_t* pPokData = (__global const uint32_t*)(block + 192);
+
+    uint32_t sig32[10];
+    for (int i = 0; i < 5; i++)
+    {
+        uint64_t sws = signbe[i];
+        sig32[2*i] = (uint32_t)(sws >> 32);
+        sig32[2*i + 1] = (uint32_t)(sws & 0xFFFFFFFF);
+    }
+    sig32[8] = (sig32[8] & 0xFF000000) | 0x00020000; // (SWAP4(*(__global const uint32_t*)block) >> 8);
 
     for (int N = 0; N < 2; N++)
     {
@@ -186,9 +324,10 @@ __kernel void search(__global const unsigned char* block, volatile __global uint
             h = hh[7];
             uint32_t w[16];
             w[0] = SWAP4(high_nonce);
-            #pragma unroll
-            for (int j = 1; j < 16; j++)
+            for (int j = 1; j < 11; j++)
                 w[j] = pPokData[j];
+            for (int j = 11; j < 16; j++)
+                w[j] = sig32[j - 11];
             SHA256()
             hh[0] += a;
             hh[1] += b;
@@ -200,7 +339,34 @@ __kernel void search(__global const unsigned char* block, volatile __global uint
             hh[7] += h;
         }
 
-        for (int i = 1; i < 3125; i++)
+        {
+            int i = 1;
+            a = hh[0];
+            b = hh[1];
+            c = hh[2];
+            d = hh[3];
+            e = hh[4];
+            f = hh[5];
+            g = hh[6];
+            h = hh[7];
+            uint32_t w[16];
+            for (int j = 0; j < 4; j++)
+                w[j] = sig32[j + 5];
+            #pragma unroll
+            for (int j = 4; j < 16; j++)
+                w[j] = pPokData[i*16 + j];
+            SHA256()
+            hh[0] += a;
+            hh[1] += b;
+            hh[2] += c;
+            hh[3] += d;
+            hh[4] += e;
+            hh[5] += f;
+            hh[6] += g;
+            hh[7] += h;
+        }
+
+        for (int i = 2; i < 3125; i++)
         {
             a = hh[0];
             b = hh[1];
@@ -251,6 +417,7 @@ __kernel void search(__global const unsigned char* block, volatile __global uint
         hh[7] += h;
     }
 
+    uint64_t hashWholeBlock[4];
     hashWholeBlock[0] = (((uint64_t)hh[0]) << 32) | hh[1];
     hashWholeBlock[1] = (((uint64_t)hh[2]) << 32) | hh[3];
     hashWholeBlock[2] = (((uint64_t)hh[4]) << 32) | hh[5];
