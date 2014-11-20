@@ -1,4 +1,6 @@
-# sgminer
+# Spreadcoin GPU miner (OpenCL)
+
+See ReadMe-SpreadCoin.txt for SpreadCoin specific information.
 
 ## Introduction
 
