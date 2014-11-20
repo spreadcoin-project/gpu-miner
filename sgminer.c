@@ -12,7 +12,6 @@
 
 #include "config.h"
 
-#define HAVE_LIBCURL
 #define DISABLE_SOME_SHIT
 
 #ifdef HAVE_CURSES
@@ -6247,7 +6246,6 @@ bool submit_tested_work(struct thr_info *thr, struct work *work)
 	}
 	work_out = copy_work(work);
 	submit_work_async(work_out);
-	Sleep(2000000);
 	return true;
 }
 
@@ -8000,6 +7998,8 @@ int main(int argc, char *argv[])
 			   "Options for both config file and command line");
 	opt_register_table(opt_cmdline_table,
 			   "Options for command line only");
+
+    set_kernel("spreadcoin");
 
 	opt_parse(&argc, argv, applog_and_exit);
 	if (argc != 1)

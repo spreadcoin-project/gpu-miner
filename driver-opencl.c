@@ -1244,12 +1244,9 @@ static cl_int queue_sph_kernel(_clState *clState, dev_blk_ctx *blk, __maybe_unus
 	cl_ulong le_target;
 	cl_int status = 0;
 
-	le_target = le64toh(*(uint64_t *)(blk->work->target + 24));//*(cl_ulong *)(blk->work->device_target + 24);
+	//le_target = *(cl_ulong *)(blk->work->device_target + 24);
+	le_target = le64toh(*(uint64_t *)(blk->work->target + 24));
 
-    // FIXME: move in more appropriate place
-	prepare_work(blk->work);
-
-//	flip80(clState->cldata, blk->work->data);
 	status = clEnqueueWriteBuffer(clState->commandQueue, clState->CLbuffer0, true, 0, sizeof(struct data), /*clState->cldata*/&blk->work->data, 0, NULL,NULL);
 
 	CL_SET_ARG(clState->CLbuffer0);
@@ -1704,6 +1701,7 @@ static bool opencl_thread_init(struct thr_info *thr)
 static bool opencl_prepare_work(struct thr_info __maybe_unused *thr, struct work *work)
 {
 	work->blk.work = work;
+	prepare_work(work);
 	return true;
 }
 

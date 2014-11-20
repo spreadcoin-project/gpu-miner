@@ -509,7 +509,7 @@ _clState *initCl(unsigned int gpu, char *name, size_t nameSize)
 			cgpu->work_size = 256;
 			break;
 		case KL_DARKCOIN:
-			applog(LOG_WARNING, "Kernel darkcoin is experimental.");
+			applog(LOG_WARNING, "Loading SpreadCoin kernel");
 			strcpy(filename, DARKCOIN_KERNNAME".cl");
 			strcpy(binaryfilename, DARKCOIN_KERNNAME);
 			break;

@@ -70,7 +70,7 @@ MATH_LIBS="-lm"
 RT_LIBS="-lrt"
 
 CFLAGS="$CFLAGS -std=gnu99"
-	
+
 case $target in
   amd64-*)
     have_x86_64=true
@@ -347,7 +347,7 @@ AC_DEFINE_UNQUOTED([ALEXKAROLD_KERNNAME], ["alexkarold"], [Filename for Alexey K
 AC_DEFINE_UNQUOTED([CKOLIVAS_KERNNAME], ["ckolivas"], [Filename for original scrypt kernel])
 AC_DEFINE_UNQUOTED([ZUIKKIS_KERNNAME], ["zuikkis"], [Filename for Zuikkis' optimised kernel])
 AC_DEFINE_UNQUOTED([PSW_KERNNAME], ["psw"], [Filename for psw's experimental kernel])
-AC_DEFINE_UNQUOTED([DARKCOIN_KERNNAME], ["darkcoin"], [Filename for DarkCoin optimised kernel])
+AC_DEFINE_UNQUOTED([DARKCOIN_KERNNAME], ["spreadcoin"], [Filename for SpreadCoin optimised kernel])
 AC_DEFINE_UNQUOTED([QUBITCOIN_KERNNAME], ["qubitcoin"], [Filename for QubitCoin optimised kernel])
 AC_DEFINE_UNQUOTED([QUARKCOIN_KERNNAME], ["quarkcoin"], [Filename for QuarkCoin optimised kernel])
 AC_DEFINE_UNQUOTED([MYRIADCOIN_GROESTL_KERNNAME], ["myriadcoin-groestl"], [Filename for MyriadCoin-Groestl optimised kernel])
