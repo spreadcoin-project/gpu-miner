@@ -98,16 +98,16 @@ typedef long sph_s64;
     #define DEC64E(x) (x)
     #define DEC64BE(x) (*(const __global sph_u64 *) (x))
     #define DEC64LE(x) SWAP8(*(const __global sph_u64 *) (x))
+    #define DEC64LEng(x) SWAP8(*(const  sph_u64 *) (x))
 #else
     #define DEC64E(x) SWAP8(x)
     #define DEC64BE(x) SWAP8(*(const __global sph_u64 *) (x))
     #define DEC64LE(x) (*(const __global sph_u64 *) (x))
+    #define DEC64LEng(x) (*(const  sph_u64 *) (x))
 #endif
 
 
-static const uint32_t disorder[8] = {801750719, 1076732275, 1354194884, 1162945305, 1, 0, 0, 0};
-
-void mul256(uint32_t c[16], const uint32_t a[8], const uint32_t b[8])
+void mul256(uint32_t c[16], __global const uint32_t a[8], const uint32_t b[8])
 {
     uint64_t r = 0;
     uint8_t carry = 0;
@@ -140,13 +140,56 @@ void mul256(uint32_t c[16], const uint32_t a[8], const uint32_t b[8])
     c[15] += r;
 }
 
-void reduce(uint32_t r[16], uint32_t a[16])
+void mul256ng(uint32_t c[16], const uint32_t a[8], const uint32_t b[8])
 {
+    uint64_t r = 0;
+    uint8_t carry = 0;
+    for (int i = 0; i < 8; i++)
+    {
+        r += c[i];
+        for (int j = 0; j < i + 1; j++)
+        {
+            uint64_t rold = r;
+            r += ((uint64_t)a[j])*b[i - j];
+            carry += rold > r;
+        }
+        c[i] = (uint32_t)(r & 0xFFFFFFFF);
+        r = (((uint64_t)carry) << 32) + (r >> 32);
+        carry = 0;
+    }
+    for (int i = 8; i < 15; i++)
+    {
+        r += c[i];
+        for (int j = i - 7; j < 8; j++)
+        {
+            uint64_t rold = r;
+            r += ((uint64_t)a[j])*b[i - j];
+            carry += rold > r;
+        }
+        c[i] = (uint32_t)(r & 0xFFFFFFFF);
+        r = (((uint64_t)carry) << 32) + (r >> 32);
+        carry = 0;
+    }
+    c[15] += r;
+}
+void reduce(uint32_t r[16], const uint32_t a[16])
+{
+    const uint32_t disorder[8] = {801750719, 1076732275, 1354194884, 1162945305, 1, 0, 0, 0};
     for (int i = 0; i < 8; i++)
         r[i] = a[i];
     for (int i = 8; i < 16; i++)
         r[i] = 0;
-    mul256(r, a + 8, disorder);
+    mul256ng(r, a + 8, disorder);
+}
+
+void reverse2(uint8_t* p)
+{
+    for (int i = 0; i < 16; i++)
+    {
+        uint8_t t = p[i];
+        p[i] = p[31-i];
+        p[31-i] = t;
+    }
 }
 
 __attribute__((reqd_work_group_size(WORKSIZE, 1, 1)))
@@ -176,21 +219,14 @@ __kernel void search(__global const unsigned char* block2, volatile __global uin
 
     uint32_t high_nonce = get_global_id(0)*64;
 
-    uint64_t signature8[5];
-    signature8[0] = block[152];
-    signature8[1] = block[160];
-    signature8[2] = block[168];
-    signature8[3] = block[176];
-    signature8[4] = block[184];
+    const uint32_t disorder[8] = {801750719, 1076732275, 1354194884, 1162945305, 1, 0, 0, 0};
 
-    uint64_t signature[4];
-    signature[0] = (DEC64LE(block + 152) >> 8) | (signature8[1] << 56);
-    signature[1] = (DEC64LE(block + 160) >> 8) | (signature8[2] << 56);
-    signature[2] = (DEC64LE(block + 168) >> 8) | (signature8[3] << 56);
-    signature[3] = (DEC64LE(block + 176) >> 8) | (signature8[4] << 56);
-
-
+    uint32_t hh2[8] = {SH0, SH1, SH2, SH3, SH4, SH5, SH6, SH7};
+    uint32_t bufferB[16];
+    uint32_t bufferA[16];
     {
+        uint32_t hh[8] = {SH0, SH1, SH2, SH3, SH4, SH5, SH6, SH7};
+        {
         uint32_t a = SH0;
         uint32_t b = SH1;
         uint32_t c = SH2;
@@ -201,7 +237,6 @@ __kernel void search(__global const unsigned char* block2, volatile __global uin
         uint32_t h = SH7;
         uint32_t t;
 
-        uint32_t hh[8] = {SH0, SH1, SH2, SH3, SH4, SH5, SH6, SH7};
 
         {
             int i = 0;
@@ -216,7 +251,7 @@ __kernel void search(__global const unsigned char* block2, volatile __global uin
             uint32_t w[16];
             #pragma unroll
             for (int j = 0; j < 16; j++)
-                w[j] = block[i*16 + j];
+                w[j] = SWAP4(((__global uint32_t*)block)[i*16 + j]);
             SHA256()
             hh[0] += a;
             hh[1] += b;
@@ -229,7 +264,7 @@ __kernel void search(__global const unsigned char* block2, volatile __global uin
         }
 
         {
-            int i = 2;
+            int i = 1;
             a = hh[0];
             b = hh[1];
             c = hh[2];
@@ -241,10 +276,10 @@ __kernel void search(__global const unsigned char* block2, volatile __global uin
             uint32_t w[16];
             #pragma unroll
             for (int j = 0; j < 5; j++)
-                w[j] = block[i*16 + j];
-            w[6] = SWAP4(high_nonce);
-            w[7] = 0x80000000;
-            for (int j = 8; j < 15; j++)
+                w[j] = SWAP4(((__global uint32_t*)block)[i*16 + j]);
+            w[5] = SWAP4(high_nonce);
+            w[6] = 0x80000000;
+            for (int j = 7; j < 15; j++)
                 w[j] = 0;
             w[15] = 704;
             SHA256()
@@ -257,24 +292,80 @@ __kernel void search(__global const unsigned char* block2, volatile __global uin
             hh[6] += g;
             hh[7] += h;
         }
+        }
+        {
+                    uint32_t a = SH0;
+        uint32_t b = SH1;
+        uint32_t c = SH2;
+        uint32_t d = SH3;
+        uint32_t e = SH4;
+        uint32_t f = SH5;
+        uint32_t g = SH6;
+        uint32_t h = SH7;
+        uint32_t t;
 
-        uint32_t bufferA[16];
-        uint32_t bufferB[16];
+        {
+            a = hh2[0];
+            b = hh2[1];
+            c = hh2[2];
+            d = hh2[3];
+            e = hh2[4];
+            f = hh2[5];
+            g = hh2[6];
+            h = hh2[7];
+            uint32_t w[16];
+            #pragma unroll
+            for (int j = 0; j < 8; j++)
+                w[j] = hh[j];
+            w[8] = 0x80000000;
+            for (int j = 9; j < 15; j++)
+                w[j] = 0;
+            w[15] = 32*8;
+            SHA256()
+            hh2[0] += a;
+            hh2[1] += b;
+            hh2[2] += c;
+            hh2[3] += d;
+            hh2[4] += e;
+            hh2[5] += f;
+            hh2[6] += g;
+            hh2[7] += h;
+        }
+        }
+
         for (int i = 0; i < 8; i++)
-            bufferA[i] = prk[i];
+            bufferA[i] = ((__global const uint32_t*)prk)[i];
         for (int i = 8; i < 16; i++)
             bufferA[i] = 0;
 
-        mul256(bufferA, (__global const uint32_t*)kinv, hh);
+        for (int i = 0; i < 8; i++)
+            hh2[i] = SWAP4(hh2[i]);
+        reverse2((uint8_t*)hh2);
+        mul256(bufferA, (__global const uint32_t*)kinv, hh2);
         reduce(bufferB, bufferA);
         reduce(bufferA, bufferB);
         reduce(bufferB, bufferA);
-
-        signature[0] = (((uint64_t)bufferB[0]) << 32) | bufferB[1];
-        signature[1] = (((uint64_t)bufferB[2]) << 32) | bufferB[3];
-        signature[2] = (((uint64_t)bufferB[4]) << 32) | bufferB[5];
-        signature[3] = (((uint64_t)bufferB[6]) << 32) | bufferB[7];
+        reverse2((uint8_t*)(bufferB));
     }
+
+    uint8_t* ps = (uint8_t*)bufferB;
+    uint8_t psign[33];
+    psign[0] = block[152];
+    for (int i = 0; i < 32; i++)
+        psign[i + 1] = ps[i];
+
+    uint64_t signature8[5];
+    signature8[0] = psign[0];
+    signature8[1] = psign[8];
+    signature8[2] = psign[16];
+    signature8[3] = psign[24];
+    signature8[4] = psign[32];
+
+    uint64_t signature[4];
+    signature[0] = (DEC64LEng(psign +  0) >> 8) | (signature8[1] << 56);
+    signature[1] = (DEC64LEng(psign +  8) >> 8) | (signature8[2] << 56);
+    signature[2] = (DEC64LEng(psign + 16) >> 8) | (signature8[3] << 56);
+    signature[3] = (DEC64LEng(psign + 24) >> 8) | (signature8[4] << 56);
 
     signature8[1] = signature[0] >> 56;
     signature8[2] = signature[1] >> 56;
