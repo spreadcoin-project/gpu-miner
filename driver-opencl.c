@@ -1186,6 +1186,10 @@ static void reverse(uint8_t* p)
     }
 }
 
+#ifndef max
+    #define max(a,b) (((a)>(b))?(a):(b))
+#endif
+
 void prepare_work(struct work* work)
 {
     if (work->prepared)
